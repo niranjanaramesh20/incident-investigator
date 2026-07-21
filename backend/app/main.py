@@ -1,7 +1,11 @@
 from fastapi import FastAPI
 
-app = FastAPI()
+app = FastAPI(
+    title="Incident Investigation System",
+    version="1.0.0")
 
 @app.get("/")
 async def root():
-    return {"message": "Hello World"}
+    return {"
+    message": "Incident Investigation API"
+    }

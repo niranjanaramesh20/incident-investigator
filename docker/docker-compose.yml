@@ -1,18 +1,20 @@
-version: '3.9'
+version: "3.9"
+
 services:
-    postgres:
-      image: postgres:16
+  postgres:
+    image: postgres:17
+    container_name: incident-postgres
 
     environment:
-      POSTGRES_DB: incident
-      POSTGRES_ USER: anu
+      POSTGRES_DB: incidents
+      POSTGRES_USER: anu
       POSTGRES_PASSWORD: anu123
 
-      ports:
-      - "5432:5432"
+    ports:
+      - "5433:5432"
 
-      volumes:
-      - postgres_data:/var/lib/postgresql/data 
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
 
 volumes:
-  postgres_data
+  postgres_data:
