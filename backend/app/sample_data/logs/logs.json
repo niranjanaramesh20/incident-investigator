@@ -1,0 +1,10 @@
+[
+  {
+    "service": "payment-service",
+    "timestamp": "2026-07-25T10:35:00",
+    "level": "ERROR",
+    "message": "Database connection timeout",
+    "host": "server-01",
+    "trace_id": "trace001"
+  }
+]

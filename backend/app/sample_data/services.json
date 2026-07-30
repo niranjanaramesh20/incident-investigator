@@ -1,0 +1,11 @@
+[{
+    "name": "payment-service",
+    "description": "Handles payments",
+    "repository_url": "https://github.com/company/payment-service",
+    "team": "payments"
+}, {
+    "name": "auth-service",
+    "description": "Authentication",
+    "repository_url": "https://github.com/company/auth-service",
+    "team": "Platform"
+}]

@@ -1,0 +1,10 @@
+[
+  {
+    "service": "payment-service",
+    "hash": "abc123",
+    "author": "Alice",
+    "message": "Fix timeout issue",
+    "branch": "main",
+    "timestamp": "2026-07-25T10:30:00"
+  }
+]

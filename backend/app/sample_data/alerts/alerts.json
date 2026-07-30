@@ -1,0 +1,9 @@
+[
+  {
+    "service": "payment-service",
+    "severity": "HIGH",
+    "metric": "CPU Usage",
+    "message": "CPU exceeded 90%",
+    "timestamp": "2026-07-25T10:36:00"
+  }
+]
