@@ -1,0 +1,26 @@
+from langchain_core.documents import Document
+from rag.reranker import Reranker
+
+
+documents = [
+    Document(
+        page_content="Database connection timeout occurred in payment service."
+    ),
+    Document(
+        page_content="Payment service version 2.1 was deployed."
+    ),
+    Document(
+        page_content="CPU usage was normal."
+    )
+]
+
+reranker = Reranker()
+
+results = reranker.rerank(
+    query="Why did the payment service fail?",
+    documents=documents,
+    top_k=2
+)
+
+for document in results:
+    print(document.page_content)
