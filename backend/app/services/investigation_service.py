@@ -1,10 +1,11 @@
-from ..rag.query_processor import QueryProcessor
-from ..rag.retriever import Retriever
-from ..rag.reranker import Reranker
-from investigation_engine import InvestigationEngine
-from evidence_validator import EvidenceValidator
-from confidence_scorer import ConfidenceScorer
-from report_generator import ReportGenerator
+from app.rag.query_processor import QueryProcessor
+from app.rag.retriever import Retriever
+from app.rag.reranker import Reranker
+
+from app.investigation.investigation_engine import InvestigationEngine
+from app.investigation.evidence_validator import EvidenceValidator
+from app.investigation.confidence_scorer import ConfidenceScorer
+from app.investigation.report_generator import ReportGenerator
 
 
 class InvestigationService:
