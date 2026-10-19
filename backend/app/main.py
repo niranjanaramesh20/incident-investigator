@@ -8,6 +8,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from fastapi.staticfiles import StaticFiles
 
 from app.ingestion.sample_data import load_sample_documents
 from app.investigation.confidence_scorer import ConfidenceScorer
@@ -296,3 +297,10 @@ def get_investigation(
         else None,
         "report": investigation.report,
     }
+
+
+app.mount(
+    "/ui",
+    StaticFiles(directory=Path(__file__).resolve().parent / "static", html=True),
+    name="ui",
+)

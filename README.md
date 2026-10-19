@@ -32,7 +32,9 @@ uvicorn app.main:app --reload
 ```
 
 The API is available at `http://127.0.0.1:8000`; interactive API docs are at
-`http://127.0.0.1:8000/docs`.
+`http://127.0.0.1:8000/docs`. Open the browser interface at
+`http://127.0.0.1:8000/ui/` to submit investigations, inspect citations, and
+reopen saved reports.
 
 ## Investigate an incident
 

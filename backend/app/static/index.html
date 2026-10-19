@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#101824" />
+    <title>Incident Investigator</title>
+    <link rel="stylesheet" href="/ui/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/ui/" aria-label="Incident Investigator home">
+        <span class="brand-mark">II</span>
+        <span>Incident Investigator</span>
+      </a>
+      <div class="health" id="health" role="status">
+        <span class="health-dot"></span><span>Checking services…</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="intro">
+        <p class="eyebrow">Operations workspace</p>
+        <h1>Find the signal.<br /><span>Understand the incident.</span></h1>
+        <p class="lede">Ask a question across logs, alerts, deployments, commits, and runbooks. Every conclusion is returned with its supporting evidence.</p>
+      </section>
+
+      <div class="columns">
+        <section class="panel form-panel" aria-labelledby="new-investigation-title">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">New investigation</p>
+              <h2 id="new-investigation-title">Describe what happened</h2>
+            </div>
+            <span class="step">01</span>
+          </div>
+          <form id="investigation-form">
+            <label for="incident">Incident summary</label>
+            <textarea id="incident" name="incident" rows="5" required maxlength="10000" placeholder="Payment failures began shortly after the production deployment…"></textarea>
+
+            <label for="question">What do you want to find out?</label>
+            <input id="question" name="question" required maxlength="2000" placeholder="What caused the increase in failed payments?" />
+
+            <details class="filters">
+              <summary>Filter the evidence <span>Optional</span></summary>
+              <div class="filter-grid">
+                <div>
+                  <label for="service">Service</label>
+                  <input id="service" name="service" placeholder="payment-service" />
+                </div>
+                <div>
+                  <label for="source-type">Source type</label>
+                  <select id="source-type" name="source_type">
+                    <option value="">All sources</option>
+                    <option value="alert">Alerts</option>
+                    <option value="deployment">Deployments</option>
+                    <option value="git_commit">Commits</option>
+                    <option value="log">Logs</option>
+                    <option value="runbook">Runbooks</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="start-time">From</label>
+                  <input id="start-time" name="start_time" type="datetime-local" />
+                </div>
+                <div>
+                  <label for="end-time">To</label>
+                  <input id="end-time" name="end_time" type="datetime-local" />
+                </div>
+              </div>
+            </details>
+
+            <button class="primary-button" id="submit-button" type="submit">
+              <span>Run investigation</span><span aria-hidden="true">↗</span>
+            </button>
+            <p class="form-message" id="form-message" role="alert"></p>
+          </form>
+        </section>
+
+        <section class="panel result-panel" aria-labelledby="report-title">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Investigation report</p>
+              <h2 id="report-title">Your findings will appear here</h2>
+            </div>
+            <span class="step">02</span>
+          </div>
+          <div id="report" class="report-body empty-state">
+            <div class="empty-icon" aria-hidden="true">⌕</div>
+            <p>Start an investigation to see its answer, confidence, and evidence citations.</p>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel history-panel" aria-labelledby="history-title">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Investigation history</p>
+            <h2 id="history-title">Saved reports</h2>
+          </div>
+          <button class="quiet-button" id="refresh-history" type="button">Refresh</button>
+        </div>
+        <div class="history-list" id="history-list">
+          <p class="muted">Loading saved reports…</p>
+        </div>
+      </section>
+      <footer>AI assisted analysis · Verify conclusions against the cited source material.</footer>
+    </main>
+    <script src="/ui/app.js" defer></script>
+  </body>
+</html>
