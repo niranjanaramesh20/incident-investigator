@@ -120,6 +120,10 @@ input:focus, textarea:focus, select:focus { border-color: #76cdb7; box-shadow: 0
 .history-list { display: grid; gap: 7px; }
 .history-row { width: 100%; padding: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 14px; text-align: left; color: var(--text); background: #111b28; border: 1px solid #2b3a4e; border-radius: 8px; cursor: pointer; }
 .history-row:hover { border-color: #6cae9f; }
+.history-audit { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
+.history-audit summary { width: fit-content; cursor: pointer; }
+.history-audit-events { margin-top: 8px; }
+.history-audit-list { margin: 0; padding-left: 18px; line-height: 1.8; }
 .history-open { min-width: 0; display: grid; gap: 5px; padding: 0; text-align: left; border: 0; background: transparent; color: inherit; cursor: pointer; }
 .history-open strong { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-open span { color: var(--muted); font-size: 11px; }

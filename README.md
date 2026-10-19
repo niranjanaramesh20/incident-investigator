@@ -137,7 +137,12 @@ status (new reports start as `open`). Filter the history with the `status` query
 parameter, update one with authenticated `PATCH /investigations/{investigation_id}/status`
 and a JSON body such as `{"status":"resolved"}`, or change it from the status
 selector beside a saved report in the web interface. Apply the new database
-migration with `alembic upgrade head` from the `backend` directory.
+migrations with `alembic upgrade head` from the `backend` directory. Each actual
+status transition is recorded with its previous status, new status, and timestamp;
+retrieve the audit trail with authenticated
+`GET /investigations/{investigation_id}/status-history` or expand **Status history**
+on a saved report in the web interface. Selecting the current status again does
+not create a duplicate event.
 
 ## Run automated tests
 

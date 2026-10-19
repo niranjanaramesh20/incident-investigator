@@ -177,11 +177,42 @@ async function loadHistory() {
         statusSelect,
         exportButton,
       );
-      row.append(openButton, actions);
+      const audit = element("details", "history-audit");
+      const auditSummary = element("summary", "", "Status history");
+      const auditEvents = element("div", "history-audit-events");
+      audit.append(auditSummary, auditEvents);
+      audit.addEventListener("toggle", () => {
+        if (audit.open && audit.dataset.loaded !== "true") {
+          loadStatusHistory(item.investigation_id, auditEvents, audit);
+        }
+      });
+      row.append(openButton, actions, audit);
       historyList.append(row);
     });
   } catch (error) {
     historyList.replaceChildren(element("p", "muted", `Could not load saved reports: ${error.message}`));
+  }
+}
+
+async function loadStatusHistory(id, container, details) {
+  container.replaceChildren(element("p", "muted", "Loading status history…"));
+  try {
+    const events = await requestJson(`/investigations/${id}/status-history`);
+    container.replaceChildren();
+    if (!events.length) {
+      container.append(element("p", "muted", "No status changes recorded yet."));
+    } else {
+      const list = element("ul", "history-audit-list");
+      events.forEach((event) => {
+        const changedAt = event.changed_at ? new Date(event.changed_at).toLocaleString() : "time unavailable";
+        const entry = element("li", "", `${event.previous_status} → ${event.new_status} · ${changedAt}`);
+        list.append(entry);
+      });
+      container.append(list);
+    }
+    details.dataset.loaded = "true";
+  } catch (error) {
+    container.replaceChildren(element("p", "muted", `Could not load status history: ${error.message}`));
   }
 }
 

@@ -22,6 +22,7 @@ from app.investigation.report_generator import ReportGenerator
 from app.db.database import SessionLocal
 from app.models.incident import Incident
 from app.models.investigation import Investigation
+from app.models.investigation_status_event import InvestigationStatusEvent
 from app.preprocessing.data_preprocessing import DataPreprocessor
 from app.rag.query_processor import QueryProcessor
 from app.rag.reranker import Reranker
@@ -501,10 +502,46 @@ def update_investigation_status(
     investigation = db.get(Investigation, investigation_id)
     if investigation is None:
         raise HTTPException(status_code=404, detail="Investigation not found.")
+    previous_status = investigation.status
+    if previous_status == update.status:
+        return {"investigation_id": investigation.id, "status": investigation.status}
     investigation.status = update.status
+    event = InvestigationStatusEvent(
+        investigation_id=investigation.id,
+        previous_status=previous_status,
+        new_status=update.status,
+    )
+    db.add(event)
     db.commit()
     db.refresh(investigation)
     return {"investigation_id": investigation.id, "status": investigation.status}
+
+
+@app.get(
+    "/investigations/{investigation_id}/status-history",
+    dependencies=[Depends(require_api_token)],
+)
+def get_investigation_status_history(
+    investigation_id: int,
+    db: Session = Depends(get_db),
+):
+    """List recorded status changes, oldest first."""
+    if db.get(Investigation, investigation_id) is None:
+        raise HTTPException(status_code=404, detail="Investigation not found.")
+    events = (
+        db.query(InvestigationStatusEvent)
+        .filter(InvestigationStatusEvent.investigation_id == investigation_id)
+        .order_by(InvestigationStatusEvent.changed_at, InvestigationStatusEvent.id)
+        .all()
+    )
+    return [
+        {
+            "previous_status": event.previous_status,
+            "new_status": event.new_status,
+            "changed_at": event.changed_at.isoformat() if event.changed_at else None,
+        }
+        for event in events
+    ]
 
 
 @app.get(

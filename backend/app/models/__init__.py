@@ -7,4 +7,5 @@ from .runbook import Runbook
 from .incident import Incident
 from .incident_service import IncidentService
 from .investigation import Investigation
+from .investigation_status_event import InvestigationStatusEvent
 from .evidence import Evidence
