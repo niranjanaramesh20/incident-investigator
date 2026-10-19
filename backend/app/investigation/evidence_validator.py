@@ -7,7 +7,7 @@ class EvidenceValidator:
         self.llm = ChatOpenAI(
             model="gpt-4o-mini",
             temperature=0.0,
-    )
+        )
 
     def validate(
             self,
@@ -19,8 +19,8 @@ class EvidenceValidator:
             return {
                 "is_valid": False,
                 "reason": "No evidence was provided.",
-                "supporting_evidnce": []
-          }
+                "supporting_evidence": []
+            }
 
         evidence_text = "\n\n".join(
             [
@@ -73,4 +73,4 @@ Return ONLY valid JSON in this format:
                 "reason": "Unable to parse validation result.",
                 "supporting_evidence": []
             }
-        
+

@@ -12,7 +12,14 @@ class DataPreprocessor:
             document = Document(
                 page_content=content,
                 metadata={
-                    "source_type": source_type
+                    "source_type": source_type,
+                    "source_id": str(
+                        record.get("hash")
+                        or record.get("id")
+                        or record.get("timestamp")
+                        or record.get("file_path")
+                        or len(documents) + 1
+                    ),
                 }
             )
 

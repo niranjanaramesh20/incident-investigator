@@ -1,4 +1,4 @@
-from vector_store import VectorStore
+from app.rag.vector_store import VectorStore
 
 class Retriever:
 
