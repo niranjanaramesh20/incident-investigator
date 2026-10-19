@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import or_, text
@@ -477,6 +477,96 @@ def get_investigation(
         else None,
         "report": investigation.report,
     }
+
+
+@app.get(
+    "/investigations/{investigation_id}/export",
+    dependencies=[Depends(require_api_token)],
+)
+def export_investigation(investigation_id: int, db: Session = Depends(get_db)):
+    """Download a saved investigation as a Markdown report."""
+    investigation = db.get(Investigation, investigation_id)
+    if investigation is None:
+        raise HTTPException(status_code=404, detail="Investigation not found.")
+
+    incident = db.get(Incident, investigation.incident_id)
+    report = investigation.report or {}
+    title = incident.title if incident else f"Investigation #{investigation.id}"
+    confidence = investigation.confidence or 0
+    lines = [
+        f"# {title}",
+        "",
+        f"- Investigation ID: {investigation.id}",
+        f"- Incident ID: {investigation.incident_id}",
+        f"- Created: {investigation.created_at.isoformat() if investigation.created_at else 'Unknown'}",
+        f"- Confidence: {confidence:.0%}",
+        "",
+        "## Incident",
+        "",
+        incident.description if incident and incident.description else "No incident description.",
+        "",
+        "## Investigation question",
+        "",
+        investigation.question,
+        "",
+        "## Findings",
+        "",
+        investigation.generated_answer or "No findings were saved.",
+        "",
+        "## Validation",
+        "",
+    ]
+
+    validation = report.get("validation") or {}
+    lines.extend([
+        f"- Evidence supported: {'Yes' if validation.get('is_valid') else 'Needs review'}",
+        f"- Details: {validation.get('reason') or 'No validation details.'}",
+        "",
+        "## Evidence timeline",
+        "",
+    ])
+    timeline = report.get("timeline") or []
+    if timeline:
+        for event in timeline:
+            source = " · ".join(
+                str(value) for value in (event.get("service"), event.get("source_type")) if value
+            )
+            suffix = f" ({source})" if source else ""
+            lines.append(
+                f"- {event.get('timestamp', 'Unknown time')}{suffix}: "
+                f"{event.get('summary', 'No summary')} [E{event.get('evidence_id', '?')}]"
+            )
+    else:
+        lines.append("No timestamped evidence was retrieved.")
+
+    lines.extend(["", "## Citations", ""])
+    citations = report.get("citations") or []
+    if citations:
+        for citation in citations:
+            citation_id = citation.get("citation_id") or f"E{citation.get('evidence_id', '?')}"
+            source = " · ".join(
+                str(value)
+                for value in (
+                    citation.get("source_type"),
+                    citation.get("service"),
+                    citation.get("source_id") or citation.get("source_path"),
+                )
+                if value
+            )
+            lines.append(f"- **[{citation_id}]** {source or 'Source details unavailable'}")
+            if citation.get("timestamp"):
+                lines.append(f"  - Timestamp: {citation['timestamp']}")
+            if citation.get("excerpt"):
+                lines.append(f"  - Excerpt: {citation['excerpt']}")
+    else:
+        lines.append("No evidence citations were returned.")
+
+    filename = f"investigation-{investigation.id}.md"
+    return Response(
+        content="\n".join(lines) + "\n",
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 app.mount(

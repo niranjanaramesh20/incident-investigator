@@ -151,16 +151,49 @@ async function loadHistory() {
       return;
     }
     reports.forEach((item) => {
-      const button = element("button", "history-row");
-      button.type = "button";
-      button.append(element("strong", "", item.incident || `Investigation #${item.investigation_id}`));
-      button.append(element("span", "", `${item.question} · ${item.created_at ? new Date(item.created_at).toLocaleString() : "date unavailable"}`));
-      button.append(element("span", "history-confidence", `${Math.round(Number(item.confidence_score || 0) * 100)}%`));
-      button.addEventListener("click", () => openSavedReport(item.investigation_id));
-      historyList.append(button);
+      const row = element("article", "history-row");
+      const openButton = element("button", "history-open");
+      openButton.type = "button";
+      openButton.append(element("strong", "", item.incident || `Investigation #${item.investigation_id}`));
+      openButton.append(element("span", "", `${item.question} · ${item.created_at ? new Date(item.created_at).toLocaleString() : "date unavailable"}`));
+      openButton.addEventListener("click", () => openSavedReport(item.investigation_id));
+      const actions = element("div", "history-actions");
+      const exportButton = element("button", "quiet-button", "Export Markdown");
+      exportButton.type = "button";
+      exportButton.addEventListener("click", () => downloadReport(item.investigation_id, exportButton));
+      actions.append(element("span", "history-confidence", `${Math.round(Number(item.confidence_score || 0) * 100)}%`), exportButton);
+      row.append(openButton, actions);
+      historyList.append(row);
     });
   } catch (error) {
     historyList.replaceChildren(element("p", "muted", `Could not load saved reports: ${error.message}`));
+  }
+}
+
+async function downloadReport(id, button) {
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "Preparing…";
+  try {
+    const headers = new Headers();
+    if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+    const response = await fetch(`/investigations/${id}/export`, { headers });
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.detail || `Request failed (${response.status})`);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `investigation-${id}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    formMessage.textContent = `Could not export report: ${error.message}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
   }
 }
 

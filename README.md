@@ -129,6 +129,10 @@ GET /investigations?q=payment&service=payment-service&min_confidence=0.6&created
 The web interface exposes text, service, minimum-confidence, and date filters.
 Use
 `GET /investigations/{investigation_id}` to retrieve a full saved report.
+Download a Markdown copy, including findings, validation, timeline, and citations,
+from the authenticated `GET /investigations/{investigation_id}/export` endpoint.
+The saved reports list in the web interface has an **Export Markdown** button
+for each report.
 
 ## Run automated tests
 
