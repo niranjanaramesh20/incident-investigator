@@ -8,19 +8,39 @@ class DataPreprocessor:
 
         for record in records:
             content = self._create_content(record, source_type)
+            metadata = {
+                "source_type": source_type,
+                "source_id": str(
+                    record.get("hash")
+                    or record.get("id")
+                    or record.get("timestamp")
+                    or record.get("file_path")
+                    or len(documents) + 1
+                ),
+            }
+            service = (
+                record.get("service")
+                or record.get("service_name")
+                or record.get("service_id")
+            )
+            if service:
+                metadata["service"] = str(service).strip().lower()
+            if record.get("service_id") is not None:
+                metadata["service_id"] = str(record["service_id"])
+            if record.get("timestamp"):
+                metadata["timestamp"] = str(record["timestamp"])
+            if record.get("environment"):
+                metadata["environment"] = str(record["environment"])
+            if record.get("level"):
+                metadata["level"] = str(record["level"])
+            if source_type == "runbook":
+                metadata["service"] = str(record.get("service") or "unknown").strip().lower()
+                if record.get("file_path"):
+                    metadata["source_path"] = str(record["file_path"])
 
             document = Document(
                 page_content=content,
-                metadata={
-                    "source_type": source_type,
-                    "source_id": str(
-                        record.get("hash")
-                        or record.get("id")
-                        or record.get("timestamp")
-                        or record.get("file_path")
-                        or len(documents) + 1
-                    ),
-                }
+                metadata=metadata,
             )
 
             documents.append(document)
@@ -30,6 +50,7 @@ class DataPreprocessor:
     def _create_content(self, record: dict, source_type: str):
         if source_type == "git_commit":
             return (
+                f"Service: {record.get('service') or record.get('service_id')}\n"
                 f"Commit: {record.get('hash')}\n"
                 f"Author: {record.get('author')}\n"
                 f"Branch: {record.get('branch')}\n"
@@ -48,7 +69,7 @@ class DataPreprocessor:
 
         if source_type == "deployment":
             return (
-                f"Service ID: {record.get('service_id')}\n"
+                f"Service: {record.get('service') or record.get('service_id')}\n"
                 f"Version: {record.get('version')}\n"
                 f"Environment: {record.get('environment')}\n"
                 f"Deployed By: {record.get('deployed_by')}\n"
@@ -58,7 +79,7 @@ class DataPreprocessor:
 
         if source_type == "alert":
             return (
-                f"Service ID: {record.get('service_id')}\n"
+                f"Service: {record.get('service') or record.get('service_id')}\n"
                 f"Severity: {record.get('severity')}\n"
                 f"Metric: {record.get('metric')}\n"
                 f"Message: {record.get('message')}\n"

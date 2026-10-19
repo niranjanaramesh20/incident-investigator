@@ -25,9 +25,10 @@ Investigation question:
 Evidence:
 {evidence}
 
-Identify the most likely root cause and explain your reasoning. Cite evidence
-using its bracketed ID. Do not invent information. If evidence is insufficient,
-say so clearly."""
+Identify the most likely root cause and explain your reasoning. Attach one or
+more exact citations in the form [Evidence N] to every factual claim about the
+incident. Only cite IDs shown in the evidence section. Do not invent information.
+If evidence is insufficient, say so clearly."""
         )
         response = (prompt | self.llm).invoke(
             {"incident": incident, "query": query, "evidence": evidence_text}

@@ -28,11 +28,14 @@ class InvestigationService:
         self.confidence_scorer = confidence_scorer
         self.report_generator = report_generator
 
-    def investigate(self, incident: str, question: str):
+    def investigate(self, incident: str, question: str, filters: dict | None = None):
 
         processed_question = self.query_processor.process(question)
 
-        evidence = self.retriever.retrieve(processed_question)
+        if filters:
+            evidence = self.retriever.retrieve(processed_question, filters=filters)
+        else:
+            evidence = self.retriever.retrieve(processed_question)
 
         ranked_evidence = self.reranker.rerank(
             processed_question,

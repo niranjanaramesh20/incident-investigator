@@ -25,8 +25,9 @@ class VectorStore:
     def is_empty(self) -> bool:
         return self.vector_store._collection.count() == 0
 
-    def search(self, query: str, k: int=5): #search for 5 relevant results
+    def search(self, query: str, k: int = 5, where: dict | None = None):
         return self.vector_store.similarity_search(
             query=query,
-            k=k
+            k=k,
+            filter=where,
         )

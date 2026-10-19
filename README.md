@@ -6,8 +6,16 @@ deployments, commits, and runbooks included in `backend/app/sample_data`.
 
 ## Run locally
 
-Requirements: Python 3.10 or newer and an OpenAI API key. The first investigation
-downloads the reranker model and creates a local Chroma database.
+Requirements: Python 3.10 or newer, Docker, and an OpenAI API key. The first
+investigation downloads the reranker model and creates a local Chroma database.
+
+Copy `.env.example` to `.env` in the repository root and fill in your OpenAI
+key. The example database URL matches the local PostgreSQL container below.
+Start PostgreSQL from the repository root:
+
+```bash
+docker compose -f docker/docker-compose.yml up -d
+```
 
 ```bash
 cd backend
@@ -16,12 +24,10 @@ source .venv/bin/activate       # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Set `OPENAI_API_KEY` before starting the API. You can copy `.env.example` to
-`.env` in the repository root and fill in your key; the application loads that
-file automatically.
+Apply the database migrations before starting the API:
 
 ```bash
-export OPENAI_API_KEY="your-openai-api-key"
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
@@ -47,5 +53,34 @@ The response includes the investigation, a validation result, a confidence
 score, and the evidence documents with their source metadata. The model may
 report that the evidence is insufficient; treat the report as an aid for
 investigation and verify its citations against the returned sources.
+The `citations` array maps each `[Evidence N]` reference to its source metadata
+and excerpt. `citation_warnings` flags references that do not resolve to
+retrieved evidence or were not confirmed by evidence validation.
+
+You can narrow retrieval by adding optional `service`, `source_type`,
+`start_time`, and `end_time` fields to the request. Source types are `alert`,
+`deployment`, `git_commit`, `log`, and `runbook`; time values use ISO 8601.
+For example, add `"service": "payment-service"` and
+`"source_type": "log"` to search payment service logs only. The applied filters
+are included in the saved report.
 
 Set `CHROMA_PERSIST_DIRECTORY` to change where the local vector index is stored.
+
+`GET /health` reports whether PostgreSQL, the OpenAI key, and the local vector
+index are ready. The vector index is created when the first investigation runs.
+
+Each successful `POST /investigate` is saved with its incident description,
+question, answer, confidence, and full report. Use `GET /investigations` to list
+saved investigations (`limit` and `offset` are supported), and
+`GET /investigations/{investigation_id}` to retrieve a full saved report.
+
+## Run automated tests
+
+The unit tests use stubbed retrieval and model results, so they do not call the
+OpenAI API:
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+python -m pytest tests
+```

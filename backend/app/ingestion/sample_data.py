@@ -29,6 +29,7 @@ def load_sample_documents():
                 [
                     {
                         "file_path": str(runbook_path.relative_to(SAMPLE_DATA_DIR)),
+                        "service": runbook_path.stem,
                         "content": runbook_path.read_text(encoding="utf-8"),
                     }
                 ],
