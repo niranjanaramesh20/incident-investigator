@@ -97,6 +97,35 @@
         </section>
       </div>
 
+      <section class="panel ingestion-panel" aria-labelledby="ingest-title">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Evidence sources</p>
+            <h2 id="ingest-title">Add or refresh evidence</h2>
+          </div>
+          <span class="step">03</span>
+        </div>
+        <form id="ingestion-form">
+          <div class="ingestion-controls">
+            <div>
+              <label for="ingestion-source-type">Source type</label>
+              <select id="ingestion-source-type" required>
+                <option value="log">Logs</option>
+                <option value="alert">Alerts</option>
+                <option value="deployment">Deployments</option>
+                <option value="git_commit">Commits</option>
+                <option value="runbook">Runbooks</option>
+              </select>
+            </div>
+            <button class="primary-button ingestion-button" id="ingestion-button" type="submit"><span class="ingestion-button-label">Index records</span><span aria-hidden="true">↗</span></button>
+          </div>
+          <label for="ingestion-records">JSON records (array)</label>
+          <textarea id="ingestion-records" rows="7" required spellcheck="false" placeholder='[{"source_id":"trace-104","service":"payment-service","timestamp":"2026-07-25T10:40:00","level":"ERROR","message":"Database connection timeout"}]'></textarea>
+          <p class="ingestion-help">Use a stable <code>source_id</code> to update a record later. Repeated IDs update existing evidence.</p>
+          <p class="form-message" id="ingestion-message" role="status"></p>
+        </form>
+      </section>
+
       <section class="panel history-panel" aria-labelledby="history-title">
         <div class="panel-heading">
           <div>

@@ -204,6 +204,36 @@ form.addEventListener("submit", async (event) => {
 
 document.querySelector("#refresh-history").addEventListener("click", loadHistory);
 
+document.querySelector("#ingestion-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const message = document.querySelector("#ingestion-message");
+  const button = document.querySelector("#ingestion-button");
+  message.textContent = "";
+  button.disabled = true;
+  button.querySelector(".ingestion-button-label").textContent = "Indexing…";
+  try {
+    const records = JSON.parse(document.querySelector("#ingestion-records").value);
+    if (!Array.isArray(records)) throw new Error("Enter a JSON array of records.");
+    const result = await requestJson("/evidence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source_type: document.querySelector("#ingestion-source-type").value,
+        records,
+      }),
+    });
+    message.textContent = `Indexed ${result.record_count} records (${result.inserted} new, ${result.updated} updated).`;
+    message.className = "form-message success-message";
+    loadHealth();
+  } catch (error) {
+    message.textContent = error.message;
+    message.className = "form-message";
+  } finally {
+    button.disabled = false;
+    button.querySelector(".ingestion-button-label").textContent = "Index records";
+  }
+});
+
 document.querySelector("#connect-button").addEventListener("click", async () => {
   const tokenInput = document.querySelector("#access-token");
   const authStatus = document.querySelector("#auth-status");

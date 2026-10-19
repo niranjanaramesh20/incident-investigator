@@ -11,7 +11,8 @@ class DataPreprocessor:
             metadata = {
                 "source_type": source_type,
                 "source_id": str(
-                    record.get("hash")
+                    record.get("source_id")
+                    or record.get("hash")
                     or record.get("id")
                     or record.get("timestamp")
                     or record.get("file_path")

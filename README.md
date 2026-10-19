@@ -85,6 +85,36 @@ vector index are ready. The vector index is created when the first
 investigation runs. `/health` remains public; investigation and saved-report
 routes require `Authorization: Bearer <API_ACCESS_TOKEN>`.
 
+## Add or refresh evidence
+
+Use the UI's **Add or refresh evidence** panel or call the authenticated
+`POST /evidence` endpoint. Submit a JSON array with one source type per request.
+The endpoint accepts up to 250 records and a 1 MB request body. Use a stable
+`source_id` (or commit `hash` / runbook `file_path`) so updates replace the
+matching indexed source instead of adding a duplicate.
+
+```bash
+curl -X POST http://127.0.0.1:8000/evidence \
+  -H "Authorization: Bearer $API_ACCESS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "source_type": "log",
+    "records": [{
+      "source_id": "trace-104",
+      "service": "payment-service",
+      "timestamp": "2026-07-25T10:40:00",
+      "level": "ERROR",
+      "message": "Database connection timeout"
+    }]
+  }'
+```
+
+Records require source-specific fields and ISO 8601 timestamps where supplied.
+Logs and alerts require `message` and `timestamp`; deployments require `version`,
+`status`, and `timestamp`; commits require `hash` and `message`; runbooks require
+`file_path` and `content`. The response reports how many documents were
+inserted or updated.
+
 Each successful `POST /investigate` is saved with its incident description,
 question, answer, confidence, and full report. Use `GET /investigations` to list
 saved investigations (`limit` and `offset` are supported), and

@@ -1,5 +1,7 @@
 import os
 import secrets
+import hashlib
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -20,6 +22,7 @@ from app.investigation.report_generator import ReportGenerator
 from app.db.database import SessionLocal
 from app.models.incident import Incident
 from app.models.investigation import Investigation
+from app.preprocessing.data_preprocessing import DataPreprocessor
 from app.rag.query_processor import QueryProcessor
 from app.rag.reranker import Reranker
 from app.rag.retriever import Retriever
@@ -77,6 +80,62 @@ class InvestigationRequest(BaseModel):
 
 
 _investigation_service = None
+_vector_store = None
+
+
+def source_identity(record: dict) -> str:
+    for key in ("source_id", "hash", "id", "file_path"):
+        value = record.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    canonical_record = json.dumps(record, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical_record.encode("utf-8")).hexdigest()
+
+
+class EvidenceIngestionRequest(BaseModel):
+    source_type: Literal["alert", "deployment", "git_commit", "log", "runbook"]
+    records: list[dict] = Field(min_length=1, max_length=250)
+
+    @model_validator(mode="after")
+    def validate_records(self):
+        required_fields = {
+            "alert": ("message", "timestamp"),
+            "deployment": ("version", "status", "timestamp"),
+            "git_commit": ("hash", "message"),
+            "log": ("message", "timestamp"),
+            "runbook": ("file_path", "content"),
+        }[self.source_type]
+        identities = set()
+        total_size = 0
+
+        for record in self.records:
+            for field in required_fields:
+                value = record.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError(f"Each {self.source_type} record requires {field}.")
+            if any(
+                isinstance(value, str) and len(value) > 20_000
+                for value in record.values()
+            ):
+                raise ValueError("Each record field must be 20,000 characters or fewer.")
+
+            total_size += len(json.dumps(record, ensure_ascii=False))
+            identity = source_identity(record)
+            if len(identity) > 256:
+                raise ValueError("A source identity must be 256 characters or fewer.")
+            if identity in identities:
+                raise ValueError("Records in one request must have unique source identities.")
+            identities.add(identity)
+            timestamp = record.get("timestamp")
+            if timestamp:
+                try:
+                    datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+                except ValueError as error:
+                    raise ValueError("Record timestamps must use ISO 8601 format.") from error
+
+        if total_size > 1_000_000:
+            raise ValueError("The total request data must be 1 MB or smaller.")
+        return self
 
 
 def get_db():
@@ -132,6 +191,31 @@ def build_evidence_filters(request: InvestigationRequest) -> dict | None:
     return filters[0] if len(filters) == 1 else {"$and": filters}
 
 
+def get_vector_store():
+    global _vector_store
+    if _vector_store is not None:
+        return _vector_store
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(
+            status_code=503,
+            detail="OPENAI_API_KEY is required to index evidence.",
+        )
+
+    try:
+        _vector_store = VectorStore()
+        if _vector_store.is_empty():
+            sample_documents = load_sample_documents()
+            if sample_documents:
+                _vector_store.add_documents(sample_documents)
+        return _vector_store
+    except Exception as error:
+        _vector_store = None
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not initialize the vector store: {error}",
+        ) from error
+
+
 def get_investigation_service():
     global _investigation_service
     if _investigation_service is not None:
@@ -143,11 +227,7 @@ def get_investigation_service():
         )
 
     try:
-        vector_store = VectorStore()
-        if vector_store.is_empty():
-            sample_documents = load_sample_documents()
-            if sample_documents:
-                vector_store.add_documents(sample_documents)
+        vector_store = get_vector_store()
 
         _investigation_service = InvestigationService(
             query_processor=QueryProcessor(),
@@ -218,6 +298,30 @@ def health(db: Session = Depends(get_db)):
 def check_authentication():
     """Verify that the supplied bearer token is accepted."""
     return {"authenticated": True}
+
+
+@app.post("/evidence", dependencies=[Depends(require_api_token)])
+def ingest_evidence(request: EvidenceIngestionRequest):
+    """Validate and index evidence records, updating known source IDs in place."""
+    try:
+        records = [
+            {**record, "source_id": source_identity(record)}
+            for record in request.records
+        ]
+        documents = DataPreprocessor().process(records, request.source_type)
+        result = get_vector_store().upsert_documents(documents)
+        return {
+            "source_type": request.source_type,
+            "record_count": len(documents),
+            **result,
+        }
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not ingest evidence: {error}",
+        ) from error
 
 
 @app.post("/investigate", dependencies=[Depends(require_api_token)])
