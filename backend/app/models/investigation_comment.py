@@ -8,6 +8,7 @@ class InvestigationComment(Base):
     __tablename__ = "investigation_comments"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     investigation_id = Column(
         Integer, ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False, index=True
     )

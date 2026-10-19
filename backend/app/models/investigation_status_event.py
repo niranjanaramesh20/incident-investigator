@@ -16,4 +16,5 @@ class InvestigationStatusEvent(Base):
     )
     previous_status = Column(String(30), nullable=False)
     new_status = Column(String(30), nullable=False)
+    changed_by = Column(String(254))
     changed_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

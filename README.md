@@ -9,16 +9,20 @@ deployments, commits, and runbooks included in `backend/app/sample_data`.
 Requirements: Python 3.10 or newer, Docker, and an OpenAI API key. The first
 investigation downloads the reranker model and creates a local Chroma database.
 
-Copy `.env.example` to `.env` in the repository root and fill in your OpenAI
-key. Generate a shared API access token with:
+Copy `.env.example` to `.env` in the repository root, add your OpenAI key, and
+generate a session signing secret:
 
 ```bash
-python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+python3 -c 'import secrets; print(secrets.token_urlsafe(48))'
 ```
 
-Put the generated value in `.env` as `API_ACCESS_TOKEN=...`. Protected API routes
-require this bearer token; the UI asks for it and keeps it in memory only. The
-example database URL matches the local PostgreSQL container below.
+Put the generated value in `.env` as `SESSION_SECRET=...`. After applying the
+migrations, create the first administrator account with `BOOTSTRAP_ADMIN_EMAIL`
+and `BOOTSTRAP_ADMIN_PASSWORD` set in `.env`. Use a unique password of at least
+12 characters; the setup command reads these values and stores only a password
+hash.
+
+The example database URL matches the local PostgreSQL container below.
 Start PostgreSQL from the repository root:
 
 ```bash
@@ -36,13 +40,17 @@ Apply the database migrations before starting the API:
 
 ```bash
 alembic upgrade head
+python -m app.scripts.create_admin
 uvicorn app.main:app --reload
 ```
 
 The API is available at `http://127.0.0.1:8000`; interactive API docs are at
-`http://127.0.0.1:8000/docs`. Open the browser interface at
-`http://127.0.0.1:8000/ui/`, enter the generated token, and connect to submit
-investigations, inspect citations, and reopen saved reports.
+`http://127.0.0.1:8000/docs`. Open `http://127.0.0.1:8000/ui/` and sign in with
+the administrator account. Admins can create analyst and viewer accounts with
+`POST /users`; account passwords must have at least 12 characters. Analysts
+can investigate, ingest evidence, assign work, update status, and comment.
+Viewers can read saved reports and history. Sessions last 12 hours and the UI
+keeps the session token in memory only.
 
 ## Investigate an incident
 
@@ -51,9 +59,17 @@ question. On the first request, the service indexes bundled sample data in
 `backend/data/chroma_db`. Later requests reuse that local index.
 
 ```bash
-export API_ACCESS_TOKEN='paste-the-generated-token-here'
+curl -X POST http://127.0.0.1:8000/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@example.com","password":"your-admin-password"}'
+```
+
+Copy the returned `access_token` into `SESSION_TOKEN`, then:
+
+```bash
+export SESSION_TOKEN='paste-the-access-token-here'
 curl -X POST http://127.0.0.1:8000/investigate \
-  -H "Authorization: Bearer $API_ACCESS_TOKEN" \
+  -H "Authorization: Bearer $SESSION_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
     "incident": "Payment transactions began failing after a production deployment.",
@@ -80,10 +96,13 @@ are included in the saved report.
 
 Set `CHROMA_PERSIST_DIRECTORY` to change where the local vector index is stored.
 
-`GET /health` reports whether PostgreSQL, the OpenAI key, API token, and local
+`GET /health` reports whether PostgreSQL, the OpenAI key, session signing secret, and local
 vector index are ready. The vector index is created when the first
-investigation runs. `/health` remains public; investigation and saved-report
-routes require `Authorization: Bearer <API_ACCESS_TOKEN>`.
+investigation runs. `/health` remains public; protected routes require a signed
+account session in `Authorization: Bearer <session-token>`. The old shared API
+token is disabled by default. Set `ALLOW_LEGACY_API_TOKEN=true` only during a
+controlled migration; it grants administrator access to anyone holding that
+token.
 
 ## Add or refresh evidence
 
@@ -95,7 +114,7 @@ matching indexed source instead of adding a duplicate.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/evidence \
-  -H "Authorization: Bearer $API_ACCESS_TOKEN" \
+  -H "Authorization: Bearer $SESSION_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
     "source_type": "log",
@@ -144,17 +163,34 @@ retrieve the audit trail with authenticated
 on a saved report in the web interface. Selecting the current status again does
 not create a duplicate event.
 
+Admins create accounts with `POST /users`, for example:
+
+```json
+{"email":"analyst@example.com","password":"a-unique-password-at-least-12-chars","role":"analyst"}
+```
+
+Roles are `admin`, `analyst`, and `viewer`. Admins can manage accounts in the
+web interface's **Team accounts** panel or use the API. They can list accounts
+with `GET /users` and change a user's role or active state with `PATCH /users/{id}`.
+Each status event and collaboration action records the signed-in account as its
+actor. Accounts are disabled immediately when an admin sets `is_active` to false.
+
 Investigations can also be assigned to a teammate using
 `PATCH /investigations/{investigation_id}/assignee` with
-`{"assigned_to":"Name"}` (send `null` to unassign), and filtered with the
+`{"assigned_to":"analyst@example.com"}` (send `null` to unassign), and filtered with the
 `assignee` query parameter on `GET /investigations`. Add and list handoff notes
-with `POST` and `GET /investigations/{investigation_id}/comments`; comment bodies
-accept an `author` display name and `body`. The **Comments and activity** panel
+with `POST` and `GET /investigations/{investigation_id}/comments`; submit a comment
+body such as `{"body":"Restarted the worker; monitoring error rate."}`. The
+comment author comes from the signed-in account. The **Comments and activity** panel
 shows collaboration notes and the audit trail. Assignment, comment, and status
 changes also create in-app notifications, available from authenticated
 `GET /notifications`; mark an item read with `PATCH /notifications/{id}` and
-`{"is_read":true}`. Notifications are shared because the app currently uses a
-single shared API token rather than individual user accounts.
+`{"is_read":true}`. Notifications are delivered to the assigned account where
+applicable. For optional external alerts, configure `SLACK_WEBHOOK_URL` for a
+Slack incoming webhook, or `NOTIFICATION_SMTP_HOST`, `NOTIFICATION_EMAIL_FROM`,
+and the related SMTP settings in `.env`. Delivery is disabled when those values
+are blank; external messages are sent only after a configured assignment or
+status change.
 
 ## Run automated tests
 

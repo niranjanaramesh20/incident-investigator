@@ -4,6 +4,7 @@ const formMessage = document.querySelector("#form-message");
 const submitButton = document.querySelector("#submit-button");
 const historyList = document.querySelector("#history-list");
 let accessToken = "";
+let currentUserRole = "";
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -170,6 +171,7 @@ async function loadHistory() {
         statusSelect.append(option);
       });
       statusSelect.value = item.status || "open";
+      statusSelect.disabled = currentUserRole === "viewer";
       statusSelect.addEventListener("change", () => updateReportStatus(item.investigation_id, statusSelect));
       const exportButton = element("button", "quiet-button", "Export Markdown");
       exportButton.type = "button";
@@ -179,19 +181,23 @@ async function loadHistory() {
         statusSelect,
         exportButton,
       );
-      const assignForm = element("form", "assignee-form");
-      const assigneeInput = element("input", "", "");
-      assigneeInput.value = item.assignee || "";
-      assigneeInput.maxLength = 100;
-      assigneeInput.placeholder = "Assign to teammate";
-      assigneeInput.setAttribute("aria-label", `Assignee for investigation ${item.investigation_id}`);
-      const assignButton = element("button", "quiet-button", "Save assignee");
-      assignButton.type = "submit";
-      assignForm.append(assigneeInput, assignButton);
-      assignForm.addEventListener("submit", (event) => {
-        event.preventDefault();
-        updateAssignee(item.investigation_id, assigneeInput, assignButton);
-      });
+      let assignForm = null;
+      if (currentUserRole !== "viewer") {
+        assignForm = element("form", "assignee-form");
+        const assigneeInput = element("input", "", "");
+        assigneeInput.value = item.assignee || "";
+        assigneeInput.maxLength = 254;
+        assigneeInput.type = "email";
+        assigneeInput.placeholder = "Teammate account email (blank to unassign)";
+        assigneeInput.setAttribute("aria-label", `Assignee for investigation ${item.investigation_id}`);
+        const assignButton = element("button", "quiet-button", "Save assignee");
+        assignButton.type = "submit";
+        assignForm.append(assigneeInput, assignButton);
+        assignForm.addEventListener("submit", (event) => {
+          event.preventDefault();
+          updateAssignee(item.investigation_id, assigneeInput, assignButton);
+        });
+      }
       const audit = element("details", "history-audit");
       const auditSummary = element("summary", "", "Status history");
       const auditEvents = element("div", "history-audit-events");
@@ -210,7 +216,9 @@ async function loadHistory() {
           loadCollaboration(item.investigation_id, collaborationBody, collaboration);
         }
       });
-      row.append(openButton, actions, assignForm, audit, collaboration);
+      row.append(openButton, actions);
+      if (assignForm) row.append(assignForm);
+      row.append(audit, collaboration);
       historyList.append(row);
     });
   } catch (error) {
@@ -255,26 +263,23 @@ async function loadCollaboration(id, container, details) {
     });
     container.append(element("h3", "", "Comments"), commentList);
 
-    const formNode = element("form", "comment-form");
-    const author = element("input", "", "");
-    author.placeholder = "Your display name";
-    author.maxLength = 100;
-    author.required = true;
-    const body = element("textarea", "", "");
-    body.placeholder = "Add a handoff note or comment";
-    body.maxLength = 5000;
-    body.required = true;
-    const submit = element("button", "quiet-button", "Add comment");
-    submit.type = "submit";
-    formNode.append(author, body, submit);
-    formNode.addEventListener("submit", async (event) => {
+    if (currentUserRole !== "viewer") {
+      const formNode = element("form", "comment-form");
+      const body = element("textarea", "", "");
+      body.placeholder = "Add a handoff note or comment";
+      body.maxLength = 5000;
+      body.required = true;
+      const submit = element("button", "quiet-button", "Add comment");
+      submit.type = "submit";
+      formNode.append(body, submit);
+      formNode.addEventListener("submit", async (event) => {
       event.preventDefault();
       submit.disabled = true;
       try {
         await requestJson(`/investigations/${id}/comments`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ author: author.value.trim(), body: body.value.trim() }),
+          body: JSON.stringify({ body: body.value.trim() }),
         });
         details.dataset.loaded = "false";
         loadCollaboration(id, container, details);
@@ -283,15 +288,17 @@ async function loadCollaboration(id, container, details) {
         formMessage.textContent = `Could not add comment: ${error.message}`;
         submit.disabled = false;
       }
-    });
-    container.append(formNode);
+      });
+      container.append(formNode);
+    }
 
     container.append(element("h3", "", "Activity"));
     const activityList = element("ul", "activity-list");
     if (!activities.length) activityList.append(element("li", "muted", "No collaboration activity yet."));
     activities.forEach((activity) => {
       const when = activity.created_at ? new Date(activity.created_at).toLocaleString() : "time unavailable";
-      activityList.append(element("li", "", `${activity.details} · ${when}`));
+      const actor = activity.actor ? `${activity.actor} · ` : "";
+      activityList.append(element("li", "", `${actor}${activity.details} · ${when}`));
     });
     container.append(activityList);
     details.dataset.loaded = "true";
@@ -311,7 +318,8 @@ async function loadStatusHistory(id, container, details) {
       const list = element("ul", "history-audit-list");
       events.forEach((event) => {
         const changedAt = event.changed_at ? new Date(event.changed_at).toLocaleString() : "time unavailable";
-        const entry = element("li", "", `${event.previous_status} → ${event.new_status} · ${changedAt}`);
+      const actor = event.changed_by ? `${event.changed_by} · ` : "";
+      const entry = element("li", "", `${actor}${event.previous_status} → ${event.new_status} · ${changedAt}`);
         list.append(entry);
       });
       container.append(list);
@@ -410,6 +418,55 @@ async function loadNotifications() {
   }
 }
 
+async function loadTeamAccounts() {
+  const list = document.querySelector("#team-list");
+  list.replaceChildren(element("p", "muted", "Loading accounts…"));
+  try {
+    const users = await requestJson("/users");
+    list.replaceChildren();
+    users.forEach((user) => {
+      const row = element("div", "team-account");
+      row.append(element("span", "", user.email));
+      const role = element("select", "", "");
+      [["admin", "Admin"], ["analyst", "Analyst"], ["viewer", "Viewer"]].forEach(([value, label]) => {
+        const option = element("option", "", label);
+        option.value = value;
+        role.append(option);
+      });
+      role.value = user.role;
+      role.addEventListener("change", () => updateTeamAccount(user.id, { role: role.value }));
+      const activeLabel = element("label", "team-active");
+      const active = document.createElement("input");
+      active.type = "checkbox";
+      active.checked = user.is_active;
+      active.setAttribute("aria-label", `Active account ${user.email}`);
+      active.addEventListener("change", () => updateTeamAccount(user.id, { is_active: active.checked }));
+      activeLabel.append(active, element("span", "", user.is_active ? "Active" : "Disabled"));
+      row.append(role, activeLabel);
+      list.append(row);
+    });
+  } catch (error) {
+    list.replaceChildren(element("p", "muted", `Could not load accounts: ${error.message}`));
+  }
+}
+
+async function updateTeamAccount(id, changes) {
+  const message = document.querySelector("#team-message");
+  message.textContent = "Saving account changes…";
+  try {
+    await requestJson(`/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(changes),
+    });
+    message.textContent = "Account updated.";
+    await loadTeamAccounts();
+  } catch (error) {
+    message.textContent = error.message;
+    await loadTeamAccounts();
+  }
+}
+
 async function openSavedReport(id) {
   reportContainer.replaceChildren(element("p", "muted", "Loading saved report…"));
   try {
@@ -500,28 +557,80 @@ document.querySelector("#ingestion-form").addEventListener("submit", async (even
 });
 
 document.querySelector("#connect-button").addEventListener("click", async () => {
-  const tokenInput = document.querySelector("#access-token");
+  const emailInput = document.querySelector("#account-email");
+  const passwordInput = document.querySelector("#account-password");
   const authStatus = document.querySelector("#auth-status");
-  const candidate = tokenInput.value.trim();
-  if (!candidate) {
-    authStatus.textContent = "Enter your token";
+  const email = emailInput.value.trim();
+  const password = passwordInput.value;
+  if (!email || !password) {
+    authStatus.textContent = "Enter email and password";
     return;
   }
   try {
-    await requestJson("/auth/check", {
-      headers: { Authorization: `Bearer ${candidate}` },
+    const login = await requestJson("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
     });
-    accessToken = candidate;
-    tokenInput.value = "";
-    authStatus.textContent = "Connected";
+    accessToken = login.access_token;
+    currentUserRole = login.user.role;
+    document.querySelector("#team-panel").hidden = currentUserRole !== "admin";
+    document.querySelector("#signout-button").hidden = false;
+    passwordInput.value = "";
+    authStatus.textContent = `${login.user.email} · ${login.user.role}`;
     authStatus.className = "auth-status connected";
     await loadHistory();
     await loadNotifications();
+    if (currentUserRole === "admin") await loadTeamAccounts();
   } catch (error) {
     accessToken = "";
+    currentUserRole = "";
+    document.querySelector("#team-panel").hidden = true;
+    document.querySelector("#signout-button").hidden = true;
+    document.querySelector("#team-list").replaceChildren();
+    historyList.replaceChildren(element("p", "muted", "Sign in to view saved reports."));
+    document.querySelector("#notification-list").replaceChildren();
+    document.querySelector("#notification-count").textContent = "0 unread";
+    reportContainer.replaceChildren(element("p", "muted", "Sign in to open saved reports."));
     authStatus.textContent = error.message;
     authStatus.className = "auth-status error";
   }
+});
+
+document.querySelector("#team-create-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const message = document.querySelector("#team-message");
+  try {
+    await requestJson("/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: document.querySelector("#team-email").value.trim(),
+        password: document.querySelector("#team-password").value,
+        role: document.querySelector("#team-role").value,
+      }),
+    });
+    document.querySelector("#team-password").value = "";
+    message.textContent = "Account created.";
+    await loadTeamAccounts();
+    await loadHistory();
+  } catch (error) {
+    message.textContent = error.message;
+  }
+});
+
+document.querySelector("#signout-button").addEventListener("click", () => {
+  accessToken = "";
+  currentUserRole = "";
+  document.querySelector("#team-panel").hidden = true;
+  document.querySelector("#signout-button").hidden = true;
+  document.querySelector("#auth-status").textContent = "Signed out";
+  document.querySelector("#auth-status").className = "auth-status";
+  historyList.replaceChildren(element("p", "muted", "Sign in to view saved reports."));
+  document.querySelector("#notification-list").replaceChildren();
+  document.querySelector("#notification-count").textContent = "0 unread";
+  document.querySelector("#team-list").replaceChildren();
+  reportContainer.replaceChildren(element("p", "muted", "Sign in to open saved reports."));
 });
 
 async function loadHealth() {

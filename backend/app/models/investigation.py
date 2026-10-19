@@ -13,5 +13,6 @@ class Investigation(Base):
     confidence = Column(Float)
     report = Column(JSON)
     status = Column(String(30), nullable=False, default="open", server_default="open")
-    assignee = Column(String(100))
+    assignee = Column(String(254))
+    assignee_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

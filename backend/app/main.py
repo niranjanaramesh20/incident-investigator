@@ -1,14 +1,13 @@
 import os
-import secrets
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, HTTPException, Query, Response
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
@@ -19,13 +18,15 @@ from app.investigation.confidence_scorer import ConfidenceScorer
 from app.investigation.evidence_validator import EvidenceValidator
 from app.investigation.investigation_engine import InvestigationEngine
 from app.investigation.report_generator import ReportGenerator
-from app.db.database import SessionLocal
+from app.auth import create_session_token, current_user, get_db, hash_password, require_admin, require_analyst, verify_password
 from app.models.incident import Incident
 from app.models.investigation import Investigation
 from app.models.investigation_status_event import InvestigationStatusEvent
 from app.models.investigation_comment import InvestigationComment
 from app.models.investigation_activity import InvestigationActivity
 from app.models.notification import Notification
+from app.models.user import User
+from app.notifications import send_external_notification
 from app.preprocessing.data_preprocessing import DataPreprocessor
 from app.rag.query_processor import QueryProcessor
 from app.rag.reranker import Reranker
@@ -40,7 +41,6 @@ app = FastAPI(
     version="1.0.0",
     description="Investigate incidents using indexed logs, alerts, deployments, commits, and runbooks.",
 )
-bearer_auth = HTTPBearer(auto_error=False)
 
 
 class InvestigationRequest(BaseModel):
@@ -147,20 +147,19 @@ class InvestigationStatusUpdate(BaseModel):
 
 
 class InvestigationAssigneeUpdate(BaseModel):
-    assigned_to: str | None = Field(default=None, max_length=100)
+    assigned_to: str | None = Field(default=None, max_length=254)
 
     @field_validator("assigned_to")
     @classmethod
     def normalize_assignee(cls, value: str | None) -> str | None:
-        value = value.strip() if value else None
+        value = value.strip().lower() if value else None
         return value or None
 
 
 class InvestigationCommentCreate(BaseModel):
-    author: str = Field(min_length=1, max_length=100)
     body: str = Field(min_length=1, max_length=5_000)
 
-    @field_validator("author", "body")
+    @field_validator("body")
     @classmethod
     def strip_comment_fields(cls, value: str) -> str:
         value = value.strip()
@@ -173,49 +172,69 @@ class NotificationReadUpdate(BaseModel):
     is_read: bool = True
 
 
+class LoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class UserCreate(BaseModel):
+    email: str = Field(min_length=3, max_length=254)
+    password: str = Field(min_length=12, max_length=256)
+    role: Literal["admin", "analyst", "viewer"] = "viewer"
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", value):
+            raise ValueError("Enter a valid email address.")
+        return value
+
+
+class UserUpdate(BaseModel):
+    role: Literal["admin", "analyst", "viewer"] | None = None
+    is_active: bool | None = None
+
+    @model_validator(mode="after")
+    def require_change(self):
+        if self.role is None and self.is_active is None:
+            raise ValueError("Provide a role or active-state change.")
+        return self
+
+
 def add_collaboration_event(
     db: Session,
     investigation_id: int,
     event_type: str,
     details: str,
     actor: str | None = None,
+    user_id: int | None = None,
+    recipient_user_id: int | None = None,
 ) -> None:
     db.add(
         InvestigationActivity(
             investigation_id=investigation_id,
             event_type=event_type,
             actor=actor,
+            user_id=user_id,
             details=details,
         )
     )
-    db.add(Notification(investigation_id=investigation_id, message=details))
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-def require_api_token(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_auth),
-):
-    configured_token = os.getenv("API_ACCESS_TOKEN", "")
-    if len(configured_token) < 32:
-        raise HTTPException(
-            status_code=503,
-            detail="Set API_ACCESS_TOKEN to a random value of at least 32 characters.",
+    db.add(
+        Notification(
+            investigation_id=investigation_id,
+            recipient_user_id=recipient_user_id,
+            message=details,
         )
-    if credentials is None or not secrets.compare_digest(
-        credentials.credentials, configured_token
-    ):
-        raise HTTPException(
-            status_code=401,
-            detail="A valid bearer token is required.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    )
+
+
+def user_id(user) -> int | None:
+    return getattr(user, "id", None)
+
+
+def user_email(user) -> str:
+    return user.email
 
 
 def build_evidence_filters(request: InvestigationRequest) -> dict | None:
@@ -336,24 +355,94 @@ def health(db: Session = Depends(get_db)):
             if len(os.getenv("API_ACCESS_TOKEN", "")) >= 32
             else "missing_or_too_short"
         ),
+        "session_secret": (
+            "configured" if len(os.getenv("SESSION_SECRET", "")) >= 32 else "missing_or_too_short"
+        ),
         "vector_store": vector_status,
     }
     ready = (
         database_status == "ok"
         and checks["openai_api_key"] == "configured"
-        and checks["api_access_token"] == "configured"
+        and (
+            checks["session_secret"] == "configured"
+            or (
+                os.getenv("ALLOW_LEGACY_API_TOKEN", "false").lower() == "true"
+                and checks["api_access_token"] == "configured"
+            )
+        )
         and vector_status == "initialized"
     )
     return {"status": "ready" if ready else "degraded", "ready": ready, "checks": checks}
 
 
-@app.get("/auth/check", dependencies=[Depends(require_api_token)])
-def check_authentication():
-    """Verify that the supplied bearer token is accepted."""
-    return {"authenticated": True}
+@app.post("/auth/login")
+def login(request: LoginRequest, db: Session = Depends(get_db)):
+    email = request.email.strip().lower()
+    user = db.query(User).filter(User.email == email).first()
+    if user is None or not user.is_active or not verify_password(request.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Email or password is incorrect.")
+    return {
+        "access_token": create_session_token(user.id),
+        "token_type": "bearer",
+        "expires_in": 43200,
+        "user": {"email": user.email, "role": user.role},
+    }
 
 
-@app.post("/evidence", dependencies=[Depends(require_api_token)])
+@app.get("/auth/check")
+def check_authentication(user=Depends(current_user)):
+    return {"authenticated": True, "email": user.email, "role": user.role}
+
+
+@app.get("/users")
+def list_users(user=Depends(current_user), db: Session = Depends(get_db)):
+    return [
+        {"id": user.id, "email": user.email, "role": user.role, "is_active": user.is_active}
+        for user in db.query(User).order_by(User.email).all()
+    ]
+
+
+@app.post("/users", status_code=201, dependencies=[Depends(require_admin)])
+def create_user(request: UserCreate, db: Session = Depends(get_db)):
+    if db.query(User).filter(User.email == request.email).first():
+        raise HTTPException(status_code=409, detail="An account with this email already exists.")
+    user = User(email=request.email, password_hash=hash_password(request.password), role=request.role)
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return {"id": user.id, "email": user.email, "role": user.role, "is_active": user.is_active}
+
+
+@app.patch("/users/{target_user_id}", dependencies=[Depends(require_admin)])
+def update_user(
+    target_user_id: int,
+    update: UserUpdate,
+    db: Session = Depends(get_db),
+    actor=Depends(require_admin),
+):
+    target = db.get(User, target_user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found.")
+    if target.id == user_id(actor):
+        raise HTTPException(status_code=409, detail="Use another administrator account to change your own access.")
+    would_remove_admin = target.role == "admin" and target.is_active and (
+        update.role in {"analyst", "viewer"} or update.is_active is False
+    )
+    if would_remove_admin:
+        other_admins = db.query(User).filter(
+            User.role == "admin", User.is_active.is_(True), User.id != target.id
+        ).count()
+        if not other_admins:
+            raise HTTPException(status_code=409, detail="Keep at least one active administrator account.")
+    if update.role is not None:
+        target.role = update.role
+    if update.is_active is not None:
+        target.is_active = update.is_active
+    db.commit()
+    return {"id": target.id, "email": target.email, "role": target.role, "is_active": target.is_active}
+
+
+@app.post("/evidence", dependencies=[Depends(require_analyst)])
 def ingest_evidence(request: EvidenceIngestionRequest):
     """Validate and index evidence records, updating known source IDs in place."""
     try:
@@ -377,7 +466,7 @@ def ingest_evidence(request: EvidenceIngestionRequest):
         ) from error
 
 
-@app.post("/investigate", dependencies=[Depends(require_api_token)])
+@app.post("/investigate", dependencies=[Depends(require_analyst)])
 def investigate(request: InvestigationRequest, db: Session = Depends(get_db)):
     """Return a root-cause report for an incident and investigation question."""
     try:
@@ -434,7 +523,7 @@ def investigate(request: InvestigationRequest, db: Session = Depends(get_db)):
         ) from error
 
 
-@app.get("/investigations", dependencies=[Depends(require_api_token)])
+@app.get("/investigations", dependencies=[Depends(current_user)])
 def list_investigations(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -514,7 +603,7 @@ def list_investigations(
 
 @app.get(
     "/investigations/{investigation_id}",
-    dependencies=[Depends(require_api_token)],
+    dependencies=[Depends(current_user)],
 )
 def get_investigation(
     investigation_id: int,
@@ -544,12 +633,14 @@ def get_investigation(
 
 @app.patch(
     "/investigations/{investigation_id}/status",
-    dependencies=[Depends(require_api_token)],
+    dependencies=[Depends(require_analyst)],
 )
 def update_investigation_status(
     investigation_id: int,
     update: InvestigationStatusUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    actor=Depends(require_analyst),
 ):
     """Change the workflow status of a saved investigation."""
     investigation = db.get(Investigation, investigation_id)
@@ -563,6 +654,7 @@ def update_investigation_status(
         investigation_id=investigation.id,
         previous_status=previous_status,
         new_status=update.status,
+        changed_by=user_email(actor),
     )
     db.add(event)
     add_collaboration_event(
@@ -570,6 +662,16 @@ def update_investigation_status(
         investigation.id,
         "status",
         f"Status changed from {previous_status} to {update.status}.",
+        actor=user_email(actor),
+        user_id=user_id(actor),
+        recipient_user_id=investigation.assignee_user_id,
+    )
+    assigned_user = db.get(User, investigation.assignee_user_id) if investigation.assignee_user_id else None
+    background_tasks.add_task(
+        send_external_notification,
+        f"Investigation #{investigation.id} status changed to {update.status}.",
+        investigation.id,
+        assigned_user.email if assigned_user else None,
     )
     db.commit()
     db.refresh(investigation)
@@ -578,7 +680,7 @@ def update_investigation_status(
 
 @app.get(
     "/investigations/{investigation_id}/status-history",
-    dependencies=[Depends(require_api_token)],
+    dependencies=[Depends(current_user)],
 )
 def get_investigation_status_history(
     investigation_id: int,
@@ -597,6 +699,7 @@ def get_investigation_status_history(
         {
             "previous_status": event.previous_status,
             "new_status": event.new_status,
+            "changed_by": event.changed_by,
             "changed_at": event.changed_at.isoformat() if event.changed_at else None,
         }
         for event in events
@@ -605,12 +708,14 @@ def get_investigation_status_history(
 
 @app.patch(
     "/investigations/{investigation_id}/assignee",
-    dependencies=[Depends(require_api_token)],
+    dependencies=[Depends(require_analyst)],
 )
 def update_investigation_assignee(
     investigation_id: int,
     update: InvestigationAssigneeUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    actor=Depends(require_analyst),
 ):
     """Assign or unassign a saved investigation."""
     investigation = db.get(Investigation, investigation_id)
@@ -620,7 +725,16 @@ def update_investigation_assignee(
     if previous_assignee == update.assigned_to:
         return {"investigation_id": investigation.id, "assigned_to": investigation.assignee}
 
+    assignee_user = None
+    if update.assigned_to:
+        assignee_user = db.query(User).filter(
+            User.email == update.assigned_to.strip().lower(), User.is_active.is_(True)
+        ).first()
+        if assignee_user is None:
+            raise HTTPException(status_code=404, detail="Active teammate account not found.")
+
     investigation.assignee = update.assigned_to
+    investigation.assignee_user_id = assignee_user.id if assignee_user else None
     if update.assigned_to:
         if previous_assignee:
             details = f"Reassigned from {previous_assignee} to {update.assigned_to}."
@@ -630,14 +744,29 @@ def update_investigation_assignee(
         details = f"Unassigned from {previous_assignee}."
     else:
         details = "Investigation assignment cleared."
-    add_collaboration_event(db, investigation.id, "assignment", details)
+    add_collaboration_event(
+        db,
+        investigation.id,
+        "assignment",
+        details,
+        actor=user_email(actor),
+        user_id=user_id(actor),
+        recipient_user_id=assignee_user.id if assignee_user else None,
+    )
+    if assignee_user:
+        background_tasks.add_task(
+            send_external_notification,
+            f"You were assigned investigation #{investigation.id}.",
+            investigation.id,
+            assignee_user.email,
+        )
     db.commit()
     return {"investigation_id": investigation.id, "assigned_to": investigation.assignee}
 
 
 @app.get(
     "/investigations/{investigation_id}/comments",
-    dependencies=[Depends(require_api_token)],
+    dependencies=[Depends(current_user)],
 )
 def list_investigation_comments(investigation_id: int, db: Session = Depends(get_db)):
     if db.get(Investigation, investigation_id) is None:
@@ -661,27 +790,32 @@ def list_investigation_comments(investigation_id: int, db: Session = Depends(get
 
 @app.post(
     "/investigations/{investigation_id}/comments",
-    dependencies=[Depends(require_api_token)],
+    dependencies=[Depends(require_analyst)],
 )
 def create_investigation_comment(
     investigation_id: int,
     comment: InvestigationCommentCreate,
     db: Session = Depends(get_db),
+    actor=Depends(require_analyst),
 ):
     if db.get(Investigation, investigation_id) is None:
         raise HTTPException(status_code=404, detail="Investigation not found.")
     saved_comment = InvestigationComment(
         investigation_id=investigation_id,
-        author=comment.author,
+        user_id=user_id(actor),
+        author=user_email(actor),
         body=comment.body,
     )
     db.add(saved_comment)
+    investigation = db.get(Investigation, investigation_id)
     add_collaboration_event(
         db,
         investigation_id,
         "comment",
-        f"{comment.author} added a comment.",
-        actor=comment.author,
+        f"{user_email(actor)} added a comment.",
+        actor=user_email(actor),
+        user_id=user_id(actor),
+        recipient_user_id=investigation.assignee_user_id,
     )
     db.commit()
     db.refresh(saved_comment)
@@ -693,7 +827,7 @@ def create_investigation_comment(
     }
 
 
-@app.get("/investigations/{investigation_id}/activity", dependencies=[Depends(require_api_token)])
+@app.get("/investigations/{investigation_id}/activity", dependencies=[Depends(current_user)])
 def list_investigation_activity(investigation_id: int, db: Session = Depends(get_db)):
     if db.get(Investigation, investigation_id) is None:
         raise HTTPException(status_code=404, detail="Investigation not found.")
@@ -714,14 +848,25 @@ def list_investigation_activity(investigation_id: int, db: Session = Depends(get
     ]
 
 
-@app.get("/notifications", dependencies=[Depends(require_api_token)])
+@app.get("/notifications")
 def list_notifications(
     limit: int = Query(default=30, ge=1, le=100),
     db: Session = Depends(get_db),
+    user=Depends(current_user),
 ):
-    unread_count = db.query(Notification).filter(Notification.is_read.is_(False)).count()
+    visibility_filter = (
+        Notification.recipient_user_id.is_(None)
+        if user_id(user) is None
+        else or_(Notification.recipient_user_id == user_id(user), Notification.recipient_user_id.is_(None))
+    )
+    unread_count = (
+        db.query(Notification)
+        .filter(visibility_filter, Notification.is_read.is_(False))
+        .count()
+    )
     notifications = (
         db.query(Notification)
+        .filter(visibility_filter)
         .order_by(Notification.created_at.desc(), Notification.id.desc())
         .limit(limit)
         .all()
@@ -741,14 +886,17 @@ def list_notifications(
     }
 
 
-@app.patch("/notifications/{notification_id}", dependencies=[Depends(require_api_token)])
+@app.patch("/notifications/{notification_id}")
 def update_notification(
     notification_id: int,
     update: NotificationReadUpdate,
     db: Session = Depends(get_db),
+    user=Depends(current_user),
 ):
     notification = db.get(Notification, notification_id)
     if notification is None:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    if notification.recipient_user_id not in (None, user_id(user)) and user.role != "admin":
         raise HTTPException(status_code=404, detail="Notification not found.")
     notification.is_read = update.is_read
     db.commit()
@@ -757,7 +905,7 @@ def update_notification(
 
 @app.get(
     "/investigations/{investigation_id}/export",
-    dependencies=[Depends(require_api_token)],
+    dependencies=[Depends(current_user)],
 )
 def export_investigation(investigation_id: int, db: Session = Depends(get_db)):
     """Download a saved investigation as a Markdown report."""

@@ -11,4 +11,5 @@ from .investigation_status_event import InvestigationStatusEvent
 from .investigation_comment import InvestigationComment
 from .investigation_activity import InvestigationActivity
 from .notification import Notification
+from .user import User
 from .evidence import Evidence

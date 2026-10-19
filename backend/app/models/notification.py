@@ -11,6 +11,7 @@ class Notification(Base):
     investigation_id = Column(
         Integer, ForeignKey("investigations.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    recipient_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     message = Column(String(300), nullable=False)
     is_read = Column(Boolean, nullable=False, default=False, server_default=false())
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

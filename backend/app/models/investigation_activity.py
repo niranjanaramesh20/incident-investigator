@@ -13,5 +13,6 @@ class InvestigationActivity(Base):
     )
     event_type = Column(String(30), nullable=False)
     actor = Column(String(100))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     details = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())

@@ -29,7 +29,7 @@ button, input, textarea, select { font: inherit; }
 .brand { color: var(--text); display: flex; align-items: center; gap: 11px; text-decoration: none; font-weight: 700; letter-spacing: -.02em; }
 .brand-mark { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 9px; color: var(--accent-ink); background: var(--accent); font: 500 11px 'DM Mono', monospace; }
 .auth-controls { display: flex; align-items: center; gap: 7px; }
-.auth-controls input { width: 170px; padding: 8px 9px; font-size: 11px; }
+.auth-controls input { width: 150px; padding: 8px 9px; font-size: 11px; }
 .auth-controls button { border: 1px solid #3c645c; border-radius: 7px; background: #1a302e; color: var(--accent); padding: 8px 10px; cursor: pointer; font-size: 11px; }
 .auth-controls button:hover { background: #24413d; }
 .auth-controls span { color: var(--muted); font-size: 10px; max-width: 135px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -146,6 +146,16 @@ input:focus, textarea:focus, select:focus { border-color: #76cdb7; box-shadow: 0
 .notification-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 8px; border-radius: 7px; background: #172231; }
 .notification-item.read { opacity: .7; }
 .notification-message { border: 0; padding: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; font-size: 11px; }
+.team-panel { margin: 0 0 12px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #111b28; }
+.team-panel h3 { margin: 0 0 10px; font-size: 13px; }
+.team-create-form { display: grid; grid-template-columns: 1.2fr 1.5fr 130px auto; gap: 8px; }
+.team-create-form input, .team-create-form select { padding: 8px; font-size: 11px; }
+.team-panel .muted { margin: 8px 0; }
+.team-list { display: grid; gap: 6px; }
+.team-account { display: grid; grid-template-columns: minmax(0, 1fr) 130px 100px; align-items: center; gap: 10px; padding: 7px; background: #172231; border-radius: 7px; color: var(--muted); font-size: 11px; }
+.team-account select { padding: 6px; font-size: 10px; }
+.team-active { display: flex; align-items: center; gap: 6px; }
+.team-active input { width: auto; }
 .history-open { min-width: 0; display: grid; gap: 5px; padding: 0; text-align: left; border: 0; background: transparent; color: inherit; cursor: pointer; }
 .history-open strong { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-open span { color: var(--muted); font-size: 11px; }
@@ -161,6 +171,7 @@ footer { color: #6f8094; font-size: 11px; text-align: center; padding: 27px 0 4p
   .form-panel, .result-panel { min-height: initial; }
   .layout { padding-top: 38px; }
   .history-filters { grid-template-columns: 1fr 1fr; }
+  .team-create-form { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 520px) {
   .topbar { padding: 9px 14px; height: auto; min-height: 60px; flex-wrap: wrap; gap: 9px; }
@@ -173,5 +184,8 @@ footer { color: #6f8094; font-size: 11px; text-align: center; padding: 27px 0 4p
   .form-panel, .result-panel, .history-panel, .ingestion-panel { padding: 17px; }
   .filter-grid { grid-template-columns: 1fr; }
   .history-filters { grid-template-columns: 1fr; }
+  .team-create-form { grid-template-columns: 1fr; }
+  .team-account { grid-template-columns: minmax(0, 1fr) 100px; }
+  .team-account .team-active { grid-column: 2; }
   h1 { font-size: 38px; }
 }
