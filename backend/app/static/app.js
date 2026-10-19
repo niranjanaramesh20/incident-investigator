@@ -137,11 +137,13 @@ async function loadHistory() {
     const query = document.querySelector("#history-query").value.trim();
     const service = document.querySelector("#history-service").value.trim();
     const minConfidence = document.querySelector("#history-min-confidence").value;
+    const status = document.querySelector("#history-status").value;
     const createdAfter = document.querySelector("#history-after").value;
     const createdBefore = document.querySelector("#history-before").value;
     if (query) params.set("q", query);
     if (service) params.set("service", service);
     if (minConfidence) params.set("min_confidence", minConfidence);
+    if (status) params.set("status", status);
     if (createdAfter) params.set("created_after", new Date(createdAfter).toISOString());
     if (createdBefore) params.set("created_before", new Date(createdBefore).toISOString());
     const reports = await requestJson(`/investigations?${params.toString()}`);
@@ -158,15 +160,43 @@ async function loadHistory() {
       openButton.append(element("span", "", `${item.question} · ${item.created_at ? new Date(item.created_at).toLocaleString() : "date unavailable"}`));
       openButton.addEventListener("click", () => openSavedReport(item.investigation_id));
       const actions = element("div", "history-actions");
+      const statusSelect = element("select", "history-status-select");
+      statusSelect.setAttribute("aria-label", `Status for investigation ${item.investigation_id}`);
+      [["open", "Open"], ["investigating", "Investigating"], ["resolved", "Resolved"]].forEach(([value, label]) => {
+        const option = element("option", "", label);
+        option.value = value;
+        statusSelect.append(option);
+      });
+      statusSelect.value = item.status || "open";
+      statusSelect.addEventListener("change", () => updateReportStatus(item.investigation_id, statusSelect));
       const exportButton = element("button", "quiet-button", "Export Markdown");
       exportButton.type = "button";
       exportButton.addEventListener("click", () => downloadReport(item.investigation_id, exportButton));
-      actions.append(element("span", "history-confidence", `${Math.round(Number(item.confidence_score || 0) * 100)}%`), exportButton);
+      actions.append(
+        element("span", "history-confidence", `${Math.round(Number(item.confidence_score || 0) * 100)}%`),
+        statusSelect,
+        exportButton,
+      );
       row.append(openButton, actions);
       historyList.append(row);
     });
   } catch (error) {
     historyList.replaceChildren(element("p", "muted", `Could not load saved reports: ${error.message}`));
+  }
+}
+
+async function updateReportStatus(id, select) {
+  select.disabled = true;
+  try {
+    await requestJson(`/investigations/${id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: select.value }),
+    });
+    await loadHistory();
+  } catch (error) {
+    formMessage.textContent = `Could not update status: ${error.message}`;
+    select.disabled = false;
   }
 }
 

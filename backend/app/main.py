@@ -138,6 +138,10 @@ class EvidenceIngestionRequest(BaseModel):
         return self
 
 
+class InvestigationStatusUpdate(BaseModel):
+    status: Literal["open", "investigating", "resolved"]
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -391,6 +395,7 @@ def list_investigations(
     max_confidence: float | None = Query(default=None, ge=0, le=1),
     created_after: datetime | None = None,
     created_before: datetime | None = None,
+    status: Literal["open", "investigating", "resolved"] | None = None,
     db: Session = Depends(get_db),
 ):
     """Search saved investigations by text, service, confidence, and date."""
@@ -423,6 +428,8 @@ def list_investigations(
         query = query.filter(Investigation.confidence >= min_confidence)
     if max_confidence is not None:
         query = query.filter(Investigation.confidence <= max_confidence)
+    if status:
+        query = query.filter(Investigation.status == status)
     if created_after:
         if created_after.tzinfo is None:
             created_after = created_after.replace(tzinfo=timezone.utc)
@@ -443,6 +450,7 @@ def list_investigations(
             "question": investigation.question,
             "investigation_result": investigation.generated_answer,
             "confidence_score": investigation.confidence,
+            "status": investigation.status,
             "created_at": investigation.created_at.isoformat()
             if investigation.created_at
             else None,
@@ -472,11 +480,31 @@ def get_investigation(
         "question": investigation.question,
         "investigation_result": investigation.generated_answer,
         "confidence_score": investigation.confidence,
+        "status": investigation.status,
         "created_at": investigation.created_at.isoformat()
         if investigation.created_at
         else None,
         "report": investigation.report,
     }
+
+
+@app.patch(
+    "/investigations/{investigation_id}/status",
+    dependencies=[Depends(require_api_token)],
+)
+def update_investigation_status(
+    investigation_id: int,
+    update: InvestigationStatusUpdate,
+    db: Session = Depends(get_db),
+):
+    """Change the workflow status of a saved investigation."""
+    investigation = db.get(Investigation, investigation_id)
+    if investigation is None:
+        raise HTTPException(status_code=404, detail="Investigation not found.")
+    investigation.status = update.status
+    db.commit()
+    db.refresh(investigation)
+    return {"investigation_id": investigation.id, "status": investigation.status}
 
 
 @app.get(

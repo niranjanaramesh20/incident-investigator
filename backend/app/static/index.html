@@ -143,6 +143,12 @@
             <option value="0.6">60% or higher</option>
             <option value="0.8">80% or higher</option>
           </select>
+          <select id="history-status" aria-label="Filter by status">
+            <option value="">All statuses</option>
+            <option value="open">Open</option>
+            <option value="investigating">Investigating</option>
+            <option value="resolved">Resolved</option>
+          </select>
           <input id="history-after" type="datetime-local" aria-label="Created after" />
           <input id="history-before" type="datetime-local" aria-label="Created before" />
           <button class="quiet-button" type="submit">Apply filters</button>

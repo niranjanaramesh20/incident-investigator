@@ -132,7 +132,12 @@ Use
 Download a Markdown copy, including findings, validation, timeline, and citations,
 from the authenticated `GET /investigations/{investigation_id}/export` endpoint.
 The saved reports list in the web interface has an **Export Markdown** button
-for each report.
+for each report. Investigations have an `open`, `investigating`, or `resolved`
+status (new reports start as `open`). Filter the history with the `status` query
+parameter, update one with authenticated `PATCH /investigations/{investigation_id}/status`
+and a JSON body such as `{"status":"resolved"}`, or change it from the status
+selector beside a saved report in the web interface. Apply the new database
+migration with `alembic upgrade head` from the `backend` directory.
 
 ## Run automated tests
 
