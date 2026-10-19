@@ -144,6 +144,18 @@ retrieve the audit trail with authenticated
 on a saved report in the web interface. Selecting the current status again does
 not create a duplicate event.
 
+Investigations can also be assigned to a teammate using
+`PATCH /investigations/{investigation_id}/assignee` with
+`{"assigned_to":"Name"}` (send `null` to unassign), and filtered with the
+`assignee` query parameter on `GET /investigations`. Add and list handoff notes
+with `POST` and `GET /investigations/{investigation_id}/comments`; comment bodies
+accept an `author` display name and `body`. The **Comments and activity** panel
+shows collaboration notes and the audit trail. Assignment, comment, and status
+changes also create in-app notifications, available from authenticated
+`GET /notifications`; mark an item read with `PATCH /notifications/{id}` and
+`{"is_read":true}`. Notifications are shared because the app currently uses a
+single shared API token rather than individual user accounts.
+
 ## Run automated tests
 
 The unit tests use stubbed retrieval and model results, so they do not call the

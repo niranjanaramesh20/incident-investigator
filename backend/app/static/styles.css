@@ -103,7 +103,7 @@ input:focus, textarea:focus, select:focus { border-color: #76cdb7; box-shadow: 0
 .evidence-details summary { cursor: pointer; color: #a8b7c7; font-size: 11px; }
 .evidence-item { margin-top: 10px; padding: 11px; background: #111b28; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11px; }
 .history-panel { margin-top: 16px; padding: 21px 24px; }
-.history-filters { display: grid; grid-template-columns: 1.8fr 1fr 1fr 1fr 1.2fr 1.2fr auto; align-items: center; gap: 8px; margin: 12px 0; }
+.history-filters { display: grid; grid-template-columns: 1.8fr 1fr 1fr 1fr 1fr 1.2fr 1.2fr auto; align-items: center; gap: 8px; margin: 12px 0; }
 .history-filters input, .history-filters select { padding: 8px; font-size: 10px; min-width: 0; }
 .history-filters button { white-space: nowrap; }
 .ingestion-panel { margin-top: 16px; padding: 21px 24px; }
@@ -118,12 +118,34 @@ input:focus, textarea:focus, select:focus { border-color: #76cdb7; box-shadow: 0
 .history-panel .panel-heading { align-items: center; margin-bottom: 13px; }
 .quiet-button { background: transparent; color: var(--accent); border: 1px solid #3c645c; border-radius: 7px; padding: 7px 10px; cursor: pointer; font-size: 11px; }
 .history-list { display: grid; gap: 7px; }
-.history-row { width: 100%; padding: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px 14px; text-align: left; color: var(--text); background: #111b28; border: 1px solid #2b3a4e; border-radius: 8px; cursor: pointer; }
+.history-row { width: 100%; padding: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 9px 14px; text-align: left; color: var(--text); background: #111b28; border: 1px solid #2b3a4e; border-radius: 8px; }
 .history-row:hover { border-color: #6cae9f; }
 .history-audit { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
 .history-audit summary { width: fit-content; cursor: pointer; }
 .history-audit-events { margin-top: 8px; }
 .history-audit-list { margin: 0; padding-left: 18px; line-height: 1.8; }
+.assignee-form { grid-column: 1 / -1; display: flex; gap: 8px; }
+.assignee-form input { max-width: 280px; padding: 7px 9px; font-size: 11px; }
+.assignee-form button { white-space: nowrap; }
+.history-collaboration { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 8px; color: var(--muted); font-size: 11px; }
+.history-collaboration summary { cursor: pointer; }
+.collaboration-body { padding-top: 8px; }
+.collaboration-body h3 { margin: 10px 0 6px; color: var(--text); font-size: 11px; }
+.comment-list { display: grid; gap: 6px; }
+.comment-card { padding: 9px; border-radius: 7px; background: #172231; }
+.comment-card strong { color: #cbd7e5; font-size: 10px; }
+.comment-card p { margin: 5px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text); }
+.comment-form { display: grid; grid-template-columns: minmax(130px, 1fr) 3fr auto; gap: 8px; margin: 10px 0; }
+.comment-form input, .comment-form textarea { padding: 8px; font-size: 11px; min-height: 36px; }
+.comment-form textarea { height: 36px; }
+.activity-list { margin: 0; padding-left: 18px; line-height: 1.8; }
+.notification-panel { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #111b28; }
+.notification-panel summary { cursor: pointer; color: var(--text); font-size: 12px; font-weight: 600; }
+.notification-count { margin-left: 8px; color: var(--accent); font-weight: 400; }
+.notification-list { display: grid; gap: 7px; margin-top: 10px; }
+.notification-item { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; padding: 8px; border-radius: 7px; background: #172231; }
+.notification-item.read { opacity: .7; }
+.notification-message { border: 0; padding: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; font-size: 11px; }
 .history-open { min-width: 0; display: grid; gap: 5px; padding: 0; text-align: left; border: 0; background: transparent; color: inherit; cursor: pointer; }
 .history-open strong { font-size: 12px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-open span { color: var(--muted); font-size: 11px; }

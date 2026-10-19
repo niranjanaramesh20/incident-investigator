@@ -136,12 +136,14 @@ async function loadHistory() {
     const params = new URLSearchParams({ limit: "20" });
     const query = document.querySelector("#history-query").value.trim();
     const service = document.querySelector("#history-service").value.trim();
+    const assignee = document.querySelector("#history-assignee").value.trim();
     const minConfidence = document.querySelector("#history-min-confidence").value;
     const status = document.querySelector("#history-status").value;
     const createdAfter = document.querySelector("#history-after").value;
     const createdBefore = document.querySelector("#history-before").value;
     if (query) params.set("q", query);
     if (service) params.set("service", service);
+    if (assignee) params.set("assignee", assignee);
     if (minConfidence) params.set("min_confidence", minConfidence);
     if (status) params.set("status", status);
     if (createdAfter) params.set("created_after", new Date(createdAfter).toISOString());
@@ -177,6 +179,19 @@ async function loadHistory() {
         statusSelect,
         exportButton,
       );
+      const assignForm = element("form", "assignee-form");
+      const assigneeInput = element("input", "", "");
+      assigneeInput.value = item.assignee || "";
+      assigneeInput.maxLength = 100;
+      assigneeInput.placeholder = "Assign to teammate";
+      assigneeInput.setAttribute("aria-label", `Assignee for investigation ${item.investigation_id}`);
+      const assignButton = element("button", "quiet-button", "Save assignee");
+      assignButton.type = "submit";
+      assignForm.append(assigneeInput, assignButton);
+      assignForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        updateAssignee(item.investigation_id, assigneeInput, assignButton);
+      });
       const audit = element("details", "history-audit");
       const auditSummary = element("summary", "", "Status history");
       const auditEvents = element("div", "history-audit-events");
@@ -186,11 +201,102 @@ async function loadHistory() {
           loadStatusHistory(item.investigation_id, auditEvents, audit);
         }
       });
-      row.append(openButton, actions, audit);
+      const collaboration = element("details", "history-collaboration");
+      const collaborationSummary = element("summary", "", "Comments and activity");
+      const collaborationBody = element("div", "collaboration-body");
+      collaboration.append(collaborationSummary, collaborationBody);
+      collaboration.addEventListener("toggle", () => {
+        if (collaboration.open && collaboration.dataset.loaded !== "true") {
+          loadCollaboration(item.investigation_id, collaborationBody, collaboration);
+        }
+      });
+      row.append(openButton, actions, assignForm, audit, collaboration);
       historyList.append(row);
     });
   } catch (error) {
     historyList.replaceChildren(element("p", "muted", `Could not load saved reports: ${error.message}`));
+  }
+}
+
+async function updateAssignee(id, input, button) {
+  const originalText = button.textContent;
+  button.disabled = true;
+  button.textContent = "Saving…";
+  try {
+    await requestJson(`/investigations/${id}/assignee`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assigned_to: input.value.trim() || null }),
+    });
+    await loadHistory();
+    loadNotifications();
+  } catch (error) {
+    formMessage.textContent = `Could not save assignee: ${error.message}`;
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+}
+
+async function loadCollaboration(id, container, details) {
+  container.replaceChildren(element("p", "muted", "Loading comments and activity…"));
+  try {
+    const [comments, activities] = await Promise.all([
+      requestJson(`/investigations/${id}/comments`),
+      requestJson(`/investigations/${id}/activity`),
+    ]);
+    container.replaceChildren();
+    const commentList = element("div", "comment-list");
+    if (!comments.length) commentList.append(element("p", "muted", "No comments yet."));
+    comments.forEach((comment) => {
+      const card = element("article", "comment-card");
+      const time = comment.created_at ? new Date(comment.created_at).toLocaleString() : "time unavailable";
+      card.append(element("strong", "", `${comment.author} · ${time}`), element("p", "", comment.body));
+      commentList.append(card);
+    });
+    container.append(element("h3", "", "Comments"), commentList);
+
+    const formNode = element("form", "comment-form");
+    const author = element("input", "", "");
+    author.placeholder = "Your display name";
+    author.maxLength = 100;
+    author.required = true;
+    const body = element("textarea", "", "");
+    body.placeholder = "Add a handoff note or comment";
+    body.maxLength = 5000;
+    body.required = true;
+    const submit = element("button", "quiet-button", "Add comment");
+    submit.type = "submit";
+    formNode.append(author, body, submit);
+    formNode.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      submit.disabled = true;
+      try {
+        await requestJson(`/investigations/${id}/comments`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ author: author.value.trim(), body: body.value.trim() }),
+        });
+        details.dataset.loaded = "false";
+        loadCollaboration(id, container, details);
+        loadNotifications();
+      } catch (error) {
+        formMessage.textContent = `Could not add comment: ${error.message}`;
+        submit.disabled = false;
+      }
+    });
+    container.append(formNode);
+
+    container.append(element("h3", "", "Activity"));
+    const activityList = element("ul", "activity-list");
+    if (!activities.length) activityList.append(element("li", "muted", "No collaboration activity yet."));
+    activities.forEach((activity) => {
+      const when = activity.created_at ? new Date(activity.created_at).toLocaleString() : "time unavailable";
+      activityList.append(element("li", "", `${activity.details} · ${when}`));
+    });
+    container.append(activityList);
+    details.dataset.loaded = "true";
+  } catch (error) {
+    container.replaceChildren(element("p", "muted", `Could not load collaboration details: ${error.message}`));
   }
 }
 
@@ -225,6 +331,7 @@ async function updateReportStatus(id, select) {
       body: JSON.stringify({ status: select.value }),
     });
     await loadHistory();
+    loadNotifications();
   } catch (error) {
     formMessage.textContent = `Could not update status: ${error.message}`;
     select.disabled = false;
@@ -255,6 +362,51 @@ async function downloadReport(id, button) {
   } finally {
     button.disabled = false;
     button.textContent = originalText;
+  }
+}
+
+async function loadNotifications() {
+  const list = document.querySelector("#notification-list");
+  list.replaceChildren(element("p", "muted", "Loading notifications…"));
+  try {
+    const result = await requestJson("/notifications?limit=30");
+    const count = Number(result.unread_count || 0);
+    document.querySelector("#notification-count").textContent = `${count} unread`;
+    list.replaceChildren();
+    if (!result.items.length) {
+      list.append(element("p", "muted", "No notifications yet."));
+      return;
+    }
+    result.items.forEach((item) => {
+      const row = element("article", `notification-item${item.is_read ? " read" : " unread"}`);
+      const message = element("button", "notification-message", item.message);
+      message.type = "button";
+      message.addEventListener("click", () => openSavedReport(item.investigation_id));
+      const time = item.created_at ? new Date(item.created_at).toLocaleString() : "time unavailable";
+      row.append(message, element("span", "muted", time));
+      if (!item.is_read) {
+        const readButton = element("button", "quiet-button", "Mark read");
+        readButton.type = "button";
+        readButton.addEventListener("click", async () => {
+          readButton.disabled = true;
+          try {
+            await requestJson(`/notifications/${item.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ is_read: true }),
+            });
+            await loadNotifications();
+          } catch (error) {
+            formMessage.textContent = `Could not mark notification as read: ${error.message}`;
+            readButton.disabled = false;
+          }
+        });
+        row.append(readButton);
+      }
+      list.append(row);
+    });
+  } catch (error) {
+    list.replaceChildren(element("p", "muted", `Could not load notifications: ${error.message}`));
   }
 }
 
@@ -299,6 +451,7 @@ form.addEventListener("submit", async (event) => {
     renderReport(report, report);
     document.querySelector("#report-title").textContent = "Investigation complete";
     await loadHistory();
+    await loadNotifications();
   } catch (error) {
     formMessage.textContent = error.message;
   } finally {
@@ -311,6 +464,9 @@ document.querySelector("#refresh-history").addEventListener("click", loadHistory
 document.querySelector("#history-filters").addEventListener("submit", (event) => {
   event.preventDefault();
   loadHistory();
+});
+document.querySelector("#notification-panel").addEventListener("toggle", (event) => {
+  if (event.currentTarget.open) loadNotifications();
 });
 
 document.querySelector("#ingestion-form").addEventListener("submit", async (event) => {
@@ -360,6 +516,7 @@ document.querySelector("#connect-button").addEventListener("click", async () => 
     authStatus.textContent = "Connected";
     authStatus.className = "auth-status connected";
     await loadHistory();
+    await loadNotifications();
   } catch (error) {
     accessToken = "";
     authStatus.textContent = error.message;

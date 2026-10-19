@@ -134,9 +134,14 @@
           </div>
           <button class="quiet-button" id="refresh-history" type="button">Refresh</button>
         </div>
+        <details class="notification-panel" id="notification-panel">
+          <summary>Notifications <span id="notification-count" class="notification-count">0 unread</span></summary>
+          <div id="notification-list" class="notification-list"></div>
+        </details>
         <form class="history-filters" id="history-filters">
           <input id="history-query" aria-label="Search investigations" placeholder="Search incident, question, or answer" />
           <input id="history-service" aria-label="Filter by service" placeholder="Service" />
+          <input id="history-assignee" aria-label="Filter by assignee" placeholder="Assignee" />
           <select id="history-min-confidence" aria-label="Minimum confidence">
             <option value="">Any confidence</option>
             <option value="0.4">40% or higher</option>

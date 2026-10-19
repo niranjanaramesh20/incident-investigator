@@ -23,6 +23,9 @@ from app.db.database import SessionLocal
 from app.models.incident import Incident
 from app.models.investigation import Investigation
 from app.models.investigation_status_event import InvestigationStatusEvent
+from app.models.investigation_comment import InvestigationComment
+from app.models.investigation_activity import InvestigationActivity
+from app.models.notification import Notification
 from app.preprocessing.data_preprocessing import DataPreprocessor
 from app.rag.query_processor import QueryProcessor
 from app.rag.reranker import Reranker
@@ -141,6 +144,51 @@ class EvidenceIngestionRequest(BaseModel):
 
 class InvestigationStatusUpdate(BaseModel):
     status: Literal["open", "investigating", "resolved"]
+
+
+class InvestigationAssigneeUpdate(BaseModel):
+    assigned_to: str | None = Field(default=None, max_length=100)
+
+    @field_validator("assigned_to")
+    @classmethod
+    def normalize_assignee(cls, value: str | None) -> str | None:
+        value = value.strip() if value else None
+        return value or None
+
+
+class InvestigationCommentCreate(BaseModel):
+    author: str = Field(min_length=1, max_length=100)
+    body: str = Field(min_length=1, max_length=5_000)
+
+    @field_validator("author", "body")
+    @classmethod
+    def strip_comment_fields(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field cannot be blank.")
+        return value
+
+
+class NotificationReadUpdate(BaseModel):
+    is_read: bool = True
+
+
+def add_collaboration_event(
+    db: Session,
+    investigation_id: int,
+    event_type: str,
+    details: str,
+    actor: str | None = None,
+) -> None:
+    db.add(
+        InvestigationActivity(
+            investigation_id=investigation_id,
+            event_type=event_type,
+            actor=actor,
+            details=details,
+        )
+    )
+    db.add(Notification(investigation_id=investigation_id, message=details))
 
 
 def get_db():
@@ -397,6 +445,7 @@ def list_investigations(
     created_after: datetime | None = None,
     created_before: datetime | None = None,
     status: Literal["open", "investigating", "resolved"] | None = None,
+    assignee: str | None = Query(default=None, min_length=1, max_length=100),
     db: Session = Depends(get_db),
 ):
     """Search saved investigations by text, service, confidence, and date."""
@@ -431,6 +480,8 @@ def list_investigations(
         query = query.filter(Investigation.confidence <= max_confidence)
     if status:
         query = query.filter(Investigation.status == status)
+    if assignee:
+        query = query.filter(Investigation.assignee.ilike(assignee.strip()))
     if created_after:
         if created_after.tzinfo is None:
             created_after = created_after.replace(tzinfo=timezone.utc)
@@ -452,6 +503,7 @@ def list_investigations(
             "investigation_result": investigation.generated_answer,
             "confidence_score": investigation.confidence,
             "status": investigation.status,
+            "assignee": investigation.assignee,
             "created_at": investigation.created_at.isoformat()
             if investigation.created_at
             else None,
@@ -482,6 +534,7 @@ def get_investigation(
         "investigation_result": investigation.generated_answer,
         "confidence_score": investigation.confidence,
         "status": investigation.status,
+        "assignee": investigation.assignee,
         "created_at": investigation.created_at.isoformat()
         if investigation.created_at
         else None,
@@ -512,6 +565,12 @@ def update_investigation_status(
         new_status=update.status,
     )
     db.add(event)
+    add_collaboration_event(
+        db,
+        investigation.id,
+        "status",
+        f"Status changed from {previous_status} to {update.status}.",
+    )
     db.commit()
     db.refresh(investigation)
     return {"investigation_id": investigation.id, "status": investigation.status}
@@ -542,6 +601,158 @@ def get_investigation_status_history(
         }
         for event in events
     ]
+
+
+@app.patch(
+    "/investigations/{investigation_id}/assignee",
+    dependencies=[Depends(require_api_token)],
+)
+def update_investigation_assignee(
+    investigation_id: int,
+    update: InvestigationAssigneeUpdate,
+    db: Session = Depends(get_db),
+):
+    """Assign or unassign a saved investigation."""
+    investigation = db.get(Investigation, investigation_id)
+    if investigation is None:
+        raise HTTPException(status_code=404, detail="Investigation not found.")
+    previous_assignee = investigation.assignee
+    if previous_assignee == update.assigned_to:
+        return {"investigation_id": investigation.id, "assigned_to": investigation.assignee}
+
+    investigation.assignee = update.assigned_to
+    if update.assigned_to:
+        if previous_assignee:
+            details = f"Reassigned from {previous_assignee} to {update.assigned_to}."
+        else:
+            details = f"Assigned to {update.assigned_to}."
+    elif previous_assignee:
+        details = f"Unassigned from {previous_assignee}."
+    else:
+        details = "Investigation assignment cleared."
+    add_collaboration_event(db, investigation.id, "assignment", details)
+    db.commit()
+    return {"investigation_id": investigation.id, "assigned_to": investigation.assignee}
+
+
+@app.get(
+    "/investigations/{investigation_id}/comments",
+    dependencies=[Depends(require_api_token)],
+)
+def list_investigation_comments(investigation_id: int, db: Session = Depends(get_db)):
+    if db.get(Investigation, investigation_id) is None:
+        raise HTTPException(status_code=404, detail="Investigation not found.")
+    comments = (
+        db.query(InvestigationComment)
+        .filter(InvestigationComment.investigation_id == investigation_id)
+        .order_by(InvestigationComment.created_at, InvestigationComment.id)
+        .all()
+    )
+    return [
+        {
+            "id": comment.id,
+            "author": comment.author,
+            "body": comment.body,
+            "created_at": comment.created_at.isoformat() if comment.created_at else None,
+        }
+        for comment in comments
+    ]
+
+
+@app.post(
+    "/investigations/{investigation_id}/comments",
+    dependencies=[Depends(require_api_token)],
+)
+def create_investigation_comment(
+    investigation_id: int,
+    comment: InvestigationCommentCreate,
+    db: Session = Depends(get_db),
+):
+    if db.get(Investigation, investigation_id) is None:
+        raise HTTPException(status_code=404, detail="Investigation not found.")
+    saved_comment = InvestigationComment(
+        investigation_id=investigation_id,
+        author=comment.author,
+        body=comment.body,
+    )
+    db.add(saved_comment)
+    add_collaboration_event(
+        db,
+        investigation_id,
+        "comment",
+        f"{comment.author} added a comment.",
+        actor=comment.author,
+    )
+    db.commit()
+    db.refresh(saved_comment)
+    return {
+        "id": saved_comment.id,
+        "author": saved_comment.author,
+        "body": saved_comment.body,
+        "created_at": saved_comment.created_at.isoformat() if saved_comment.created_at else None,
+    }
+
+
+@app.get("/investigations/{investigation_id}/activity", dependencies=[Depends(require_api_token)])
+def list_investigation_activity(investigation_id: int, db: Session = Depends(get_db)):
+    if db.get(Investigation, investigation_id) is None:
+        raise HTTPException(status_code=404, detail="Investigation not found.")
+    events = (
+        db.query(InvestigationActivity)
+        .filter(InvestigationActivity.investigation_id == investigation_id)
+        .order_by(InvestigationActivity.created_at, InvestigationActivity.id)
+        .all()
+    )
+    return [
+        {
+            "event_type": event.event_type,
+            "actor": event.actor,
+            "details": event.details,
+            "created_at": event.created_at.isoformat() if event.created_at else None,
+        }
+        for event in events
+    ]
+
+
+@app.get("/notifications", dependencies=[Depends(require_api_token)])
+def list_notifications(
+    limit: int = Query(default=30, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    unread_count = db.query(Notification).filter(Notification.is_read.is_(False)).count()
+    notifications = (
+        db.query(Notification)
+        .order_by(Notification.created_at.desc(), Notification.id.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "unread_count": unread_count,
+        "items": [
+            {
+                "id": item.id,
+                "investigation_id": item.investigation_id,
+                "message": item.message,
+                "is_read": item.is_read,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+            }
+            for item in notifications
+        ],
+    }
+
+
+@app.patch("/notifications/{notification_id}", dependencies=[Depends(require_api_token)])
+def update_notification(
+    notification_id: int,
+    update: NotificationReadUpdate,
+    db: Session = Depends(get_db),
+):
+    notification = db.get(Notification, notification_id)
+    if notification is None:
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    notification.is_read = update.is_read
+    db.commit()
+    return {"id": notification.id, "is_read": notification.is_read}
 
 
 @app.get(

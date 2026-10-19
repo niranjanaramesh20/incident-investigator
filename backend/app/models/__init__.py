@@ -8,4 +8,7 @@ from .incident import Incident
 from .incident_service import IncidentService
 from .investigation import Investigation
 from .investigation_status_event import InvestigationStatusEvent
+from .investigation_comment import InvestigationComment
+from .investigation_activity import InvestigationActivity
+from .notification import Notification
 from .evidence import Evidence

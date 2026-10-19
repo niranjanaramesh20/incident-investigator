@@ -13,4 +13,5 @@ class Investigation(Base):
     confidence = Column(Float)
     report = Column(JSON)
     status = Column(String(30), nullable=False, default="open", server_default="open")
+    assignee = Column(String(100))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
