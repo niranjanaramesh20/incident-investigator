@@ -117,7 +117,17 @@ inserted or updated.
 
 Each successful `POST /investigate` is saved with its incident description,
 question, answer, confidence, and full report. Use `GET /investigations` to list
-saved investigations (`limit` and `offset` are supported), and
+saved investigations (`limit` and `offset` are supported). The history endpoint
+also accepts `q` to search incident titles, descriptions, questions, and answers;
+`service` to filter by service name; `min_confidence` and `max_confidence` from
+0 to 1; and ISO 8601 `created_after` and `created_before` timestamps. For example:
+
+```text
+GET /investigations?q=payment&service=payment-service&min_confidence=0.6&created_after=2026-10-01T00:00:00Z
+```
+
+The web interface exposes text, service, minimum-confidence, and date filters.
+Use
 `GET /investigations/{investigation_id}` to retrieve a full saved report.
 
 ## Run automated tests

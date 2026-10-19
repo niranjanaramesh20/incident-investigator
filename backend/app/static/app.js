@@ -133,7 +133,18 @@ function renderReport(report, identifiers = {}) {
 async function loadHistory() {
   historyList.replaceChildren(element("p", "muted", "Loading saved reports…"));
   try {
-    const reports = await requestJson("/investigations?limit=20");
+    const params = new URLSearchParams({ limit: "20" });
+    const query = document.querySelector("#history-query").value.trim();
+    const service = document.querySelector("#history-service").value.trim();
+    const minConfidence = document.querySelector("#history-min-confidence").value;
+    const createdAfter = document.querySelector("#history-after").value;
+    const createdBefore = document.querySelector("#history-before").value;
+    if (query) params.set("q", query);
+    if (service) params.set("service", service);
+    if (minConfidence) params.set("min_confidence", minConfidence);
+    if (createdAfter) params.set("created_after", new Date(createdAfter).toISOString());
+    if (createdBefore) params.set("created_before", new Date(createdBefore).toISOString());
+    const reports = await requestJson(`/investigations?${params.toString()}`);
     historyList.replaceChildren();
     if (!reports.length) {
       historyList.append(element("p", "muted", "No saved investigations yet."));
@@ -203,6 +214,10 @@ form.addEventListener("submit", async (event) => {
 });
 
 document.querySelector("#refresh-history").addEventListener("click", loadHistory);
+document.querySelector("#history-filters").addEventListener("submit", (event) => {
+  event.preventDefault();
+  loadHistory();
+});
 
 document.querySelector("#ingestion-form").addEventListener("submit", async (event) => {
   event.preventDefault();
