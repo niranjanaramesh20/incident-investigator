@@ -68,6 +68,8 @@ investigation and verify its citations against the returned sources.
 The `citations` array maps each `[Evidence N]` reference to its source metadata
 and excerpt. `citation_warnings` flags references that do not resolve to
 retrieved evidence or were not confirmed by evidence validation.
+Timestamped evidence is also shown in chronological order in the report
+timeline; each timeline item links back to its retrieved evidence.
 
 You can narrow retrieval by adding optional `service`, `source_type`,
 `start_time`, and `end_time` fields to the request. Source types are `alert`,

@@ -143,3 +143,30 @@ def test_report_warns_when_answer_cites_missing_evidence():
 
     assert report["citations"] == []
     assert "E4" in report["citation_warnings"][0]
+
+
+def test_report_timeline_sorts_timestamped_evidence():
+    evidence = [
+        SimpleNamespace(
+            page_content="Deployment completed.",
+            metadata={"source_type": "deployment", "timestamp": "2026-07-25T10:15:00"},
+        ),
+        SimpleNamespace(
+            page_content="Error rate increased.",
+            metadata={"source_type": "alert", "timestamp": "2026-07-25T10:00:00"},
+        ),
+        SimpleNamespace(
+            page_content="Runbook suggests checking database health.",
+            metadata={"source_type": "runbook"},
+        ),
+    ]
+
+    report = ReportGenerator().generate(
+        "Payment errors",
+        "The alert followed deployment [Evidence 1].",
+        {"is_valid": True, "reason": "Supported.", "supporting_evidence": [1, 2]},
+        1.0,
+        evidence,
+    )
+
+    assert [event["evidence_id"] for event in report["timeline"]] == [2, 1]

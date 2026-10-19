@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import re
 
 
@@ -14,6 +15,7 @@ class ReportGenerator:
 
         evidence_list = []
         evidence_by_id = {}
+        timeline = []
 
         for i, document in enumerate(evidence):
             evidence_id = i + 1
@@ -25,6 +27,35 @@ class ReportGenerator:
             }
             evidence_list.append(evidence_item)
             evidence_by_id[evidence_id] = evidence_item
+            timestamp = metadata.get("timestamp")
+            if timestamp:
+                try:
+                    parsed_timestamp = datetime.fromisoformat(
+                        str(timestamp).replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    parsed_timestamp = None
+                if parsed_timestamp is not None:
+                    if parsed_timestamp.tzinfo is None:
+                        parsed_timestamp = parsed_timestamp.replace(tzinfo=timezone.utc)
+                    parsed_timestamp = parsed_timestamp.astimezone(timezone.utc)
+                    summary = " ".join(document.page_content.split())
+                    if len(summary) > 240:
+                        summary = summary[:237].rstrip() + "..."
+                    timeline.append(
+                        (
+                            parsed_timestamp,
+                            {
+                                "evidence_id": evidence_id,
+                                "timestamp": parsed_timestamp.isoformat(),
+                                "source_type": metadata.get("source_type"),
+                                "source_id": metadata.get("source_id"),
+                                "service": metadata.get("service"),
+                                "summary": summary,
+                            },
+                        )
+                    )
+        timeline.sort(key=lambda entry: (entry[0], entry[1]["evidence_id"]))
 
         cited_ids = list(
             dict.fromkeys(
@@ -107,6 +138,7 @@ class ReportGenerator:
             "confidence_score": confidence_score,
 
             "evidence": evidence_list,
+            "timeline": [event for _, event in timeline],
             "citations": citations,
             "citation_warnings": citation_warnings,
         }

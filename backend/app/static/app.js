@@ -43,6 +43,33 @@ function renderReport(report, identifiers = {}) {
   validationSection.append(element("p", "", report.validation?.reason || "No validation details."));
   reportContainer.append(validationSection);
 
+  const timelineSection = element("section", "report-section");
+  timelineSection.append(element("h3", "", "Evidence timeline"));
+  const timeline = report.timeline || [];
+  if (timeline.length === 0) {
+    timelineSection.append(element("p", "muted", "No timestamped evidence was retrieved."));
+  } else {
+    const timelineList = element("ol", "timeline-list");
+    timeline.forEach((event) => {
+      const item = element("li", "timeline-item");
+      const marker = element("span", "timeline-marker");
+      const body = element("div", "timeline-content");
+      const metaLine = element("div", "timeline-meta");
+      metaLine.append(element("time", "", new Date(event.timestamp).toLocaleString()));
+      const source = [event.service, event.source_type].filter(Boolean).join(" · ");
+      if (source) metaLine.append(element("span", "", source));
+      body.append(metaLine, element("p", "", event.summary));
+      const evidenceButton = element("button", "timeline-evidence", `Open E${event.evidence_id}`);
+      evidenceButton.type = "button";
+      evidenceButton.dataset.evidenceId = event.evidence_id;
+      body.append(evidenceButton);
+      item.append(marker, body);
+      timelineList.append(item);
+    });
+    timelineSection.append(timelineList);
+  }
+  reportContainer.append(timelineSection);
+
   const citationsSection = element("section", "report-section");
   citationsSection.append(element("h3", "", "Citations"));
   const citations = report.citations || [];
@@ -78,9 +105,11 @@ function renderReport(report, identifiers = {}) {
   const evidence = report.evidence || [];
   if (evidence.length) {
     const details = element("details", "evidence-details");
+    details.id = "all-evidence";
     details.append(element("summary", "", `All retrieved evidence (${evidence.length})`));
     evidence.forEach((item) => {
       const block = element("div", "evidence-item");
+      block.id = `evidence-${item.evidence_id}`;
       const heading = element("strong", "", `Evidence ${item.evidence_id} · ${item.metadata?.source_type || "source"}`);
       block.append(heading, document.createElement("br"));
       block.append(element("span", "", item.content));
@@ -88,6 +117,17 @@ function renderReport(report, identifiers = {}) {
     });
     reportContainer.append(details);
   }
+
+  reportContainer.querySelectorAll(".timeline-evidence").forEach((button) => {
+    button.addEventListener("click", () => {
+      const details = reportContainer.querySelector("#all-evidence");
+      const target = reportContainer.querySelector(`#evidence-${button.dataset.evidenceId}`);
+      if (details && target) {
+        details.open = true;
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  });
 }
 
 async function loadHistory() {
