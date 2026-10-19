@@ -28,6 +28,13 @@ button, input, textarea, select { font: inherit; }
 }
 .brand { color: var(--text); display: flex; align-items: center; gap: 11px; text-decoration: none; font-weight: 700; letter-spacing: -.02em; }
 .brand-mark { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 9px; color: var(--accent-ink); background: var(--accent); font: 500 11px 'DM Mono', monospace; }
+.auth-controls { display: flex; align-items: center; gap: 7px; }
+.auth-controls input { width: 170px; padding: 8px 9px; font-size: 11px; }
+.auth-controls button { border: 1px solid #3c645c; border-radius: 7px; background: #1a302e; color: var(--accent); padding: 8px 10px; cursor: pointer; font-size: 11px; }
+.auth-controls button:hover { background: #24413d; }
+.auth-controls span { color: var(--muted); font-size: 10px; max-width: 135px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auth-controls .connected { color: var(--accent); }
+.auth-controls .error { color: #ee8585; }
 .health { color: var(--muted); display: flex; align-items: center; gap: 9px; font-size: 12px; }
 .health-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warning); box-shadow: 0 0 12px currentColor; }
 .health.ready .health-dot { background: var(--accent); }
@@ -103,9 +110,12 @@ footer { color: #6f8094; font-size: 11px; text-align: center; padding: 27px 0 4p
   .layout { padding-top: 38px; }
 }
 @media (max-width: 520px) {
-  .topbar { padding: 0 17px; height: 60px; }
+  .topbar { padding: 9px 14px; height: auto; min-height: 60px; flex-wrap: wrap; gap: 9px; }
   .brand { font-size: 12px; }
-  .health { font-size: 10px; }
+  .health { font-size: 9px; margin-left: auto; }
+  .auth-controls { width: 100%; }
+  .auth-controls input { flex: 1; width: auto; }
+  .auth-controls span { max-width: 100px; }
   .layout { width: calc(100% - 28px); padding-top: 32px; }
   .form-panel, .result-panel, .history-panel { padding: 17px; }
   .filter-grid { grid-template-columns: 1fr; }

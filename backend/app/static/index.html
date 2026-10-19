@@ -13,6 +13,11 @@
         <span class="brand-mark">II</span>
         <span>Incident Investigator</span>
       </a>
+      <div class="auth-controls">
+        <input id="access-token" type="password" autocomplete="off" aria-label="API access token" placeholder="API access token" />
+        <button id="connect-button" type="button">Connect</button>
+        <span id="auth-status" role="status">Not connected</span>
+      </div>
       <div class="health" id="health" role="status">
         <span class="health-dot"></span><span>Checking services…</span>
       </div>

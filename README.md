@@ -10,7 +10,15 @@ Requirements: Python 3.10 or newer, Docker, and an OpenAI API key. The first
 investigation downloads the reranker model and creates a local Chroma database.
 
 Copy `.env.example` to `.env` in the repository root and fill in your OpenAI
-key. The example database URL matches the local PostgreSQL container below.
+key. Generate a shared API access token with:
+
+```bash
+python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+```
+
+Put the generated value in `.env` as `API_ACCESS_TOKEN=...`. Protected API routes
+require this bearer token; the UI asks for it and keeps it in memory only. The
+example database URL matches the local PostgreSQL container below.
 Start PostgreSQL from the repository root:
 
 ```bash
@@ -33,8 +41,8 @@ uvicorn app.main:app --reload
 
 The API is available at `http://127.0.0.1:8000`; interactive API docs are at
 `http://127.0.0.1:8000/docs`. Open the browser interface at
-`http://127.0.0.1:8000/ui/` to submit investigations, inspect citations, and
-reopen saved reports.
+`http://127.0.0.1:8000/ui/`, enter the generated token, and connect to submit
+investigations, inspect citations, and reopen saved reports.
 
 ## Investigate an incident
 
@@ -43,7 +51,9 @@ question. On the first request, the service indexes bundled sample data in
 `backend/data/chroma_db`. Later requests reuse that local index.
 
 ```bash
+export API_ACCESS_TOKEN='paste-the-generated-token-here'
 curl -X POST http://127.0.0.1:8000/investigate \
+  -H "Authorization: Bearer $API_ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
     "incident": "Payment transactions began failing after a production deployment.",
@@ -68,8 +78,10 @@ are included in the saved report.
 
 Set `CHROMA_PERSIST_DIRECTORY` to change where the local vector index is stored.
 
-`GET /health` reports whether PostgreSQL, the OpenAI key, and the local vector
-index are ready. The vector index is created when the first investigation runs.
+`GET /health` reports whether PostgreSQL, the OpenAI key, API token, and local
+vector index are ready. The vector index is created when the first
+investigation runs. `/health` remains public; investigation and saved-report
+routes require `Authorization: Bearer <API_ACCESS_TOKEN>`.
 
 Each successful `POST /investigate` is saved with its incident description,
 question, answer, confidence, and full report. Use `GET /investigations` to list

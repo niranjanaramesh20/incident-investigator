@@ -1,10 +1,12 @@
 import os
+import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -31,6 +33,7 @@ app = FastAPI(
     version="1.0.0",
     description="Investigate incidents using indexed logs, alerts, deployments, commits, and runbooks.",
 )
+bearer_auth = HTTPBearer(auto_error=False)
 
 
 class InvestigationRequest(BaseModel):
@@ -82,6 +85,25 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def require_api_token(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_auth),
+):
+    configured_token = os.getenv("API_ACCESS_TOKEN", "")
+    if len(configured_token) < 32:
+        raise HTTPException(
+            status_code=503,
+            detail="Set API_ACCESS_TOKEN to a random value of at least 32 characters.",
+        )
+    if credentials is None or not secrets.compare_digest(
+        credentials.credentials, configured_token
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="A valid bearer token is required.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 
 def build_evidence_filters(request: InvestigationRequest) -> dict | None:
@@ -176,17 +198,29 @@ def health(db: Session = Depends(get_db)):
     checks = {
         "database": database_status,
         "openai_api_key": "configured" if os.getenv("OPENAI_API_KEY") else "missing",
+        "api_access_token": (
+            "configured"
+            if len(os.getenv("API_ACCESS_TOKEN", "")) >= 32
+            else "missing_or_too_short"
+        ),
         "vector_store": vector_status,
     }
     ready = (
         database_status == "ok"
         and checks["openai_api_key"] == "configured"
+        and checks["api_access_token"] == "configured"
         and vector_status == "initialized"
     )
     return {"status": "ready" if ready else "degraded", "ready": ready, "checks": checks}
 
 
-@app.post("/investigate")
+@app.get("/auth/check", dependencies=[Depends(require_api_token)])
+def check_authentication():
+    """Verify that the supplied bearer token is accepted."""
+    return {"authenticated": True}
+
+
+@app.post("/investigate", dependencies=[Depends(require_api_token)])
 def investigate(request: InvestigationRequest, db: Session = Depends(get_db)):
     """Return a root-cause report for an incident and investigation question."""
     try:
@@ -243,7 +277,7 @@ def investigate(request: InvestigationRequest, db: Session = Depends(get_db)):
         ) from error
 
 
-@app.get("/investigations")
+@app.get("/investigations", dependencies=[Depends(require_api_token)])
 def list_investigations(
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -274,7 +308,10 @@ def list_investigations(
     ]
 
 
-@app.get("/investigations/{investigation_id}")
+@app.get(
+    "/investigations/{investigation_id}",
+    dependencies=[Depends(require_api_token)],
+)
 def get_investigation(
     investigation_id: int,
     db: Session = Depends(get_db),

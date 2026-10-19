@@ -3,6 +3,7 @@ const form = document.querySelector("#investigation-form");
 const formMessage = document.querySelector("#form-message");
 const submitButton = document.querySelector("#submit-button");
 const historyList = document.querySelector("#history-list");
+let accessToken = "";
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -12,7 +13,9 @@ function element(tag, className, text) {
 }
 
 async function requestJson(url, options = {}) {
-  const response = await fetch(url, options);
+  const headers = new Headers(options.headers || {});
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  const response = await fetch(url, { ...options, headers });
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.detail || `Request failed (${response.status})`);
@@ -160,6 +163,30 @@ form.addEventListener("submit", async (event) => {
 });
 
 document.querySelector("#refresh-history").addEventListener("click", loadHistory);
+
+document.querySelector("#connect-button").addEventListener("click", async () => {
+  const tokenInput = document.querySelector("#access-token");
+  const authStatus = document.querySelector("#auth-status");
+  const candidate = tokenInput.value.trim();
+  if (!candidate) {
+    authStatus.textContent = "Enter your token";
+    return;
+  }
+  try {
+    await requestJson("/auth/check", {
+      headers: { Authorization: `Bearer ${candidate}` },
+    });
+    accessToken = candidate;
+    tokenInput.value = "";
+    authStatus.textContent = "Connected";
+    authStatus.className = "auth-status connected";
+    await loadHistory();
+  } catch (error) {
+    accessToken = "";
+    authStatus.textContent = error.message;
+    authStatus.className = "auth-status error";
+  }
+});
 
 async function loadHealth() {
   const health = document.querySelector("#health");
