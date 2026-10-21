@@ -142,8 +142,16 @@
               <h3 id="evaluation-title">Evaluation history</h3>
               <p class="muted">Compare known incident checks across runs.</p>
             </div>
-            <button class="quiet-button" id="refresh-evaluations" type="button">Refresh runs</button>
+            <div class="evaluation-buttons">
+              <button class="quiet-button" id="run-evaluation" type="button">Run evaluation</button>
+              <button class="quiet-button" id="refresh-evaluations" type="button">Refresh</button>
+            </div>
           </div>
+          <p class="muted" id="evaluation-progress" role="status"></p>
+          <section class="correction-review" id="correction-review">
+            <h4>Review analyst corrections</h4>
+            <div id="correction-queue" class="correction-queue"><p class="muted">Loading corrections…</p></div>
+          </section>
           <div id="evaluation-history" class="evaluation-history"><p class="muted">No evaluation runs recorded.</p></div>
         </section>
         <section class="team-panel" id="team-panel" hidden aria-labelledby="team-title">

@@ -23,6 +23,7 @@ from app.models.incident import Incident
 from app.models.investigation import Investigation
 from app.models.investigation_feedback import InvestigationFeedback
 from app.models.evaluation_run import EvaluationRun
+from app.models.evaluation_case_set import EvaluationCaseSet
 from app.models.investigation_status_event import InvestigationStatusEvent
 from app.models.investigation_comment import InvestigationComment
 from app.models.investigation_activity import InvestigationActivity
@@ -35,6 +36,7 @@ from app.rag.reranker import Reranker
 from app.rag.retriever import Retriever
 from app.rag.vector_store import VectorStore
 from app.services.investigation_service import InvestigationService
+from app.evaluations.runner import get_or_create_case_set, execute_run
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
@@ -730,6 +732,150 @@ def submit_investigation_feedback(
     }
 
 
+@app.post("/evaluations/runs", status_code=202, dependencies=[Depends(require_analyst)])
+def start_evaluation_run(
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    actor=Depends(require_analyst),
+):
+    case_set = get_or_create_case_set(db, user_email(actor))
+    run = EvaluationRun(
+        dataset_version=case_set.version,
+        initiated_by=user_email(actor),
+        case_count=len(case_set.cases),
+        passed_count=0,
+        pass_rate=0,
+        mean_confidence=0,
+        validation_rate=0,
+        citation_rate=0,
+        results=[],
+        status="queued",
+    )
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    background_tasks.add_task(execute_run, run.id)
+    return {"run_id": run.id, "dataset_version": run.dataset_version, "status": run.status}
+
+
+@app.get("/evaluations/corrections", dependencies=[Depends(require_analyst)])
+def list_reviewable_corrections(
+    db: Session = Depends(get_db),
+    actor=Depends(require_analyst),
+):
+    case_set = get_or_create_case_set(db, user_email(actor))
+    approved_ids = {
+        case.get("source_feedback_id")
+        for case in case_set.cases
+        if case.get("source_feedback_id") is not None
+    }
+    records = (
+        db.query(InvestigationFeedback, Investigation, Incident)
+        .join(Investigation, Investigation.id == InvestigationFeedback.investigation_id)
+        .join(Incident, Incident.id == Investigation.incident_id)
+        .filter(InvestigationFeedback.corrected_cause.isnot(None))
+        .order_by(InvestigationFeedback.updated_at.desc())
+        .all()
+    )
+    return [
+        {
+            "feedback_id": feedback.id,
+            "investigation_id": investigation.id,
+            "incident": incident.description,
+            "question": investigation.question,
+            "service": (investigation.report or {}).get("filters", {}).get("service"),
+            "correction_target": feedback.correction_target,
+            "corrected_cause": feedback.corrected_cause,
+            "comment": feedback.comment,
+            "approved": feedback.id in approved_ids,
+        }
+        for feedback, investigation, incident in records
+    ]
+
+
+@app.post("/evaluations/corrections/{feedback_id}/approve", status_code=201, dependencies=[Depends(require_analyst)])
+def approve_evaluation_correction(
+    feedback_id: int,
+    db: Session = Depends(get_db),
+    actor=Depends(require_analyst),
+):
+    feedback = db.get(InvestigationFeedback, feedback_id)
+    if feedback is None or not feedback.corrected_cause or not feedback.correction_target:
+        raise HTTPException(status_code=404, detail="A complete analyst correction was not found.")
+    case_set = get_or_create_case_set(db, user_email(actor))
+    if any(case.get("source_feedback_id") == feedback.id for case in case_set.cases):
+        raise HTTPException(status_code=409, detail="This correction is already in the current evaluation set.")
+    investigation = db.get(Investigation, feedback.investigation_id)
+    incident = db.get(Incident, investigation.incident_id) if investigation else None
+    if investigation is None or incident is None:
+        raise HTTPException(status_code=404, detail="The corrected investigation was not found.")
+
+    cases = list(case_set.cases)
+    cases.append({
+        "id": f"analyst-correction-{feedback.id}",
+        "source_feedback_id": feedback.id,
+        "incident": incident.description,
+        "question": investigation.question,
+        "service": (investigation.report or {}).get("filters", {}).get("service"),
+        "correction_target": feedback.correction_target,
+        "expected_terms": [feedback.corrected_cause],
+        "minimum_citations": 1,
+    })
+    new_set = EvaluationCaseSet(
+        version=case_set.version + 1,
+        cases=cases,
+        change_summary=f"Added correction from investigation #{investigation.id}",
+        created_by=user_email(actor),
+    )
+    db.add(new_set)
+    db.commit()
+    db.refresh(new_set)
+    return {
+        "dataset_version": new_set.version,
+        "case_count": len(new_set.cases),
+        "change_summary": new_set.change_summary,
+    }
+
+
+@app.get("/evaluations/runs/{run_id}", dependencies=[Depends(current_user)])
+def get_evaluation_run(run_id: int, db: Session = Depends(get_db)):
+    run = db.get(EvaluationRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Evaluation run not found.")
+    return {
+        "id": run.id,
+        "dataset_version": run.dataset_version,
+        "initiated_by": run.initiated_by,
+        "case_count": run.case_count,
+        "passed_count": run.passed_count,
+        "pass_rate": run.pass_rate,
+        "mean_confidence": run.mean_confidence,
+        "validation_rate": run.validation_rate,
+        "citation_rate": run.citation_rate,
+        "status": run.status,
+        "completed_cases": run.completed_cases,
+        "current_case": run.current_case,
+        "error": run.error,
+        "results": run.results,
+        "created_at": run.created_at.isoformat() if run.created_at else None,
+    }
+
+
+@app.get("/evaluations/case-sets/{version}", dependencies=[Depends(current_user)])
+def get_evaluation_case_set(version: int, db: Session = Depends(get_db)):
+    case_set = db.query(EvaluationCaseSet).filter_by(version=version).one_or_none()
+    if case_set is None:
+        raise HTTPException(status_code=404, detail="Evaluation case set not found.")
+    return {
+        "version": case_set.version,
+        "change_summary": case_set.change_summary,
+        "created_by": case_set.created_by,
+        "created_at": case_set.created_at.isoformat() if case_set.created_at else None,
+        "case_count": len(case_set.cases),
+        "cases": case_set.cases,
+    }
+
+
 @app.get("/evaluations/runs", dependencies=[Depends(current_user)])
 def list_evaluation_runs(
     limit: int = Query(default=20, ge=1, le=100),
@@ -749,6 +895,10 @@ def list_evaluation_runs(
             "mean_confidence": run.mean_confidence,
             "validation_rate": run.validation_rate,
             "citation_rate": run.citation_rate,
+            "status": run.status,
+            "completed_cases": run.completed_cases,
+            "current_case": run.current_case,
+            "error": run.error,
             "results": run.results,
             "created_at": run.created_at.isoformat() if run.created_at else None,
         }

@@ -292,9 +292,11 @@ async function loadHistory() {
   }
 }
 
-async function loadEvaluationHistory() {
+async function loadEvaluationHistory(refreshCorrections = false) {
   const container = document.querySelector("#evaluation-history");
   container.replaceChildren(element("p", "muted", "Loading evaluation runs…"));
+  if (currentUserRole === "viewer") document.querySelector("#correction-review").hidden = true;
+  else if (refreshCorrections) await loadCorrectionQueue();
   try {
     const runs = await requestJson("/evaluations/runs?limit=20");
     container.replaceChildren();
@@ -307,8 +309,22 @@ async function loadEvaluationHistory() {
       const older = runs[index + 1];
       const title = element("div", "evaluation-run-title");
       title.append(element("strong", "", `Run #${run.id} · dataset v${run.dataset_version}`));
-      title.append(element("span", "muted", `${run.created_at ? new Date(run.created_at).toLocaleString() : "date unavailable"} · ${run.initiated_by}`));
+      const runState = run.status === "running" || run.status === "queued"
+        ? `${run.status} · ${run.completed_cases}/${run.case_count}${run.current_case ? ` · ${run.current_case}` : ""}`
+        : run.status === "failed" ? `Failed · ${run.error || "see run details"}` : `${run.created_at ? new Date(run.created_at).toLocaleString() : "date unavailable"} · ${run.initiated_by}`;
+      title.append(element("span", `muted ${run.status === "failed" ? "case-failed" : ""}`, runState));
       card.append(title);
+      if (run.status !== "completed") {
+        if (run.status === "running" || run.status === "queued") {
+          const progressBar = element("div", "evaluation-progress-bar");
+          const progressFill = element("span", "");
+          progressFill.style.width = `${run.case_count ? Math.round(run.completed_cases / run.case_count * 100) : 0}%`;
+          progressBar.append(progressFill);
+          card.append(progressBar);
+        }
+        container.append(card);
+        return;
+      }
       const metrics = element("div", "evaluation-metrics");
       [
         ["Pass rate", run.pass_rate],
@@ -330,6 +346,31 @@ async function loadEvaluationHistory() {
         metrics.append(metric);
       });
       card.append(metrics, element("p", "muted evaluation-case-count", `${run.passed_count}/${run.case_count} cases passed`));
+      const snapshot = element("details", "evaluation-cases");
+      snapshot.append(element("summary", "", `Dataset v${run.dataset_version} snapshot`));
+      const snapshotBody = element("div", "evaluation-snapshot");
+      snapshot.append(snapshotBody);
+      snapshot.addEventListener("toggle", async () => {
+        if (!snapshot.open || snapshot.dataset.loaded === "true") return;
+        snapshotBody.append(element("p", "muted", "Loading versioned cases…"));
+        try {
+          const data = await requestJson(`/evaluations/case-sets/${run.dataset_version}`);
+          snapshotBody.replaceChildren(element("p", "muted", `${data.change_summary} · created by ${data.created_by}`));
+          data.cases.forEach((testCase) => {
+            const item = element("article", "snapshot-case");
+            item.append(element("strong", "", testCase.id));
+            if (testCase.correction_target) item.append(element("p", "", `Disputed finding: ${testCase.correction_target}`));
+            item.append(element("p", "", `Incident: ${testCase.incident}`));
+            item.append(element("p", "", `Question: ${testCase.question}`));
+            item.append(element("p", "muted", `Expected terms: ${(testCase.expected_terms || []).join(", ")}`));
+            snapshotBody.append(item);
+          });
+          snapshot.dataset.loaded = "true";
+        } catch (error) {
+          snapshotBody.replaceChildren(element("p", "muted", `Could not load dataset snapshot: ${error.message}`));
+        }
+      });
+      card.append(snapshot);
       const details = element("details", "evaluation-cases");
       details.append(element("summary", "", "Case results"));
       const list = element("ul", "evaluation-case-list");
@@ -345,6 +386,83 @@ async function loadEvaluationHistory() {
     });
   } catch (error) {
     container.replaceChildren(element("p", "muted", `Could not load evaluation history: ${error.message}`));
+  }
+}
+
+async function loadCorrectionQueue() {
+  const container = document.querySelector("#correction-queue");
+  if (currentUserRole === "viewer") {
+    document.querySelector("#correction-review").hidden = true;
+    return;
+  }
+  document.querySelector("#correction-review").hidden = false;
+  container.replaceChildren(element("p", "muted", "Loading corrections…"));
+  try {
+    const corrections = await requestJson("/evaluations/corrections");
+    container.replaceChildren();
+    if (!corrections.length) {
+      container.append(element("p", "muted", "No analyst corrections to review yet."));
+      return;
+    }
+    corrections.forEach((correction) => {
+      const card = element("article", "correction-card");
+      card.append(element("strong", "", `Investigation #${correction.investigation_id}`));
+      card.append(element("p", "muted", correction.incident));
+      card.append(element("p", "", `Evaluation question: ${correction.question}`));
+      card.append(element("p", "", `Disputed: ${correction.correction_target}`));
+      card.append(element("p", "", `Proposed cause: ${correction.corrected_cause}`));
+      if (correction.comment) card.append(element("p", "muted", `Analyst note: ${correction.comment}`));
+      const button = element("button", "quiet-button", correction.approved ? "Included in current set" : "Approve as evaluation case");
+      button.type = "button";
+      button.disabled = correction.approved;
+      button.addEventListener("click", async () => {
+        button.disabled = true;
+        button.textContent = "Adding…";
+        try {
+          const result = await requestJson(`/evaluations/corrections/${correction.feedback_id}/approve`, { method: "POST" });
+          document.querySelector("#evaluation-progress").textContent = `Added to evaluation dataset v${result.dataset_version} (${result.case_count} cases).`;
+          await loadEvaluationHistory(true);
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = `Could not add: ${error.message}`;
+        }
+      });
+      card.append(button);
+      container.append(card);
+    });
+  } catch (error) {
+    container.replaceChildren(element("p", "muted", `Could not load corrections: ${error.message}`));
+  }
+}
+
+async function startEvaluation() {
+  const button = document.querySelector("#run-evaluation");
+  const progress = document.querySelector("#evaluation-progress");
+  button.disabled = true;
+  button.textContent = "Starting…";
+  try {
+    const started = await requestJson("/evaluations/runs", { method: "POST" });
+    progress.textContent = `Evaluation run #${started.run_id} queued for dataset v${started.dataset_version}.`;
+    await loadEvaluationHistory(true);
+    for (let attempt = 0; attempt < 900; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      const run = await requestJson(`/evaluations/runs/${started.run_id}`);
+      if (run.status === "completed") {
+        progress.textContent = `Run #${run.id} completed: ${run.passed_count}/${run.case_count} cases passed.`;
+        await loadEvaluationHistory();
+        return;
+      }
+      if (run.status === "failed") throw new Error(run.error || "Evaluation failed.");
+      progress.textContent = `${run.status === "queued" ? "Waiting to start" : `Running ${run.current_case || "case"}`} · ${run.completed_cases}/${run.case_count} cases complete.`;
+      await loadEvaluationHistory();
+    }
+    progress.textContent = `Run #${started.run_id} is still running. Use Refresh to check its progress.`;
+  } catch (error) {
+    progress.textContent = `Evaluation could not complete: ${error.message}`;
+    await loadEvaluationHistory();
+  } finally {
+    button.disabled = false;
+    button.textContent = "Run evaluation";
   }
 }
 
@@ -641,6 +759,7 @@ form.addEventListener("submit", async (event) => {
 
 document.querySelector("#refresh-history").addEventListener("click", loadHistory);
 document.querySelector("#refresh-evaluations").addEventListener("click", loadEvaluationHistory);
+document.querySelector("#run-evaluation").addEventListener("click", startEvaluation);
 document.querySelector("#history-filters").addEventListener("submit", (event) => {
   event.preventDefault();
   loadHistory();
@@ -699,12 +818,13 @@ document.querySelector("#connect-button").addEventListener("click", async () => 
     currentUserRole = login.user.role;
     document.querySelector("#team-panel").hidden = currentUserRole !== "admin";
     document.querySelector("#evaluation-panel").hidden = false;
+    document.querySelector("#run-evaluation").hidden = currentUserRole === "viewer";
     document.querySelector("#signout-button").hidden = false;
     passwordInput.value = "";
     authStatus.textContent = `${login.user.email} · ${login.user.role}`;
     authStatus.className = "auth-status connected";
     await loadHistory();
-    await loadEvaluationHistory();
+    await loadEvaluationHistory(true);
     await loadNotifications();
     if (currentUserRole === "admin") await loadTeamAccounts();
   } catch (error) {

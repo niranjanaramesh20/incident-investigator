@@ -216,14 +216,16 @@ evidence are available, run it from `backend` with:
 python -m app.scripts.evaluate_known_incidents
 ```
 
-The command runs each case through the current retrieval and report pipeline,
-prints per-case citation and expected-term checks plus aggregate pass,
-confidence, validation, and citation rates, saves the run to PostgreSQL, and
-exits nonzero if any case fails. Corrections submitted by analysts are included
-as additional regression cases on later runs. Signed-in users can compare recent
-runs in **Evaluation history** in the web interface; use **Refresh runs** after
-running the command. The set is a small regression signal; its expected-term and
-citation checks are not a substitute for analyst review.
+Analysts and admins can also run evaluations from **Evaluation history** in the
+web interface and watch per-case progress. The command and button use the same
+current case set and save results to PostgreSQL. Analysts can review corrections
+in the **Review analyst corrections** queue and approve them into a new immutable
+dataset version. Each subsequent run records that version, so results stay tied
+to the exact reviewed cases used. Expand a run's dataset snapshot in the UI or
+retrieve it with authenticated `GET /evaluations/case-sets/{version}`. Signed-in
+users can compare recent runs in **Evaluation history**. The set is a small
+regression signal; its expected-term and citation checks are not a substitute
+for analyst review.
 
 ## Run automated tests
 

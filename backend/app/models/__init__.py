@@ -15,3 +15,4 @@ from .user import User
 from .evidence import Evidence
 from .investigation_feedback import InvestigationFeedback
 from .evaluation_run import EvaluationRun
+from .evaluation_case_set import EvaluationCaseSet
