@@ -119,6 +119,57 @@ function renderReport(report, identifiers = {}) {
     reportContainer.append(details);
   }
 
+  if (identifiers.investigation_id) {
+    const feedback = element("section", "report-section feedback-section");
+    feedback.append(element("h3", "", "Was this report useful?"));
+    const feedbackStatus = element("p", "muted", "Loading feedback…");
+    const actions = element("div", "feedback-actions");
+    const comment = document.createElement("textarea");
+    comment.maxLength = 2000;
+    comment.placeholder = "What should be improved? (optional)";
+    comment.setAttribute("aria-label", "Feedback comment");
+    const correctionTarget = document.createElement("input");
+    correctionTarget.maxLength = 500;
+    correctionTarget.placeholder = "Incorrect finding or citation (optional)";
+    correctionTarget.setAttribute("aria-label", "Incorrect finding or citation");
+    const correctedCause = document.createElement("textarea");
+    correctedCause.maxLength = 2000;
+    correctedCause.placeholder = "What is the corrected cause? (pair with the finding above)";
+    correctedCause.setAttribute("aria-label", "Corrected cause");
+    const buttons = [
+      ["helpful", "Helpful"],
+      ["incorrect", "Incorrect"],
+    ];
+    buttons.forEach(([rating, label]) => {
+      const button = element("button", "secondary-button", label);
+      button.type = "button";
+      button.disabled = currentUserRole === "viewer";
+      button.addEventListener("click", async () => {
+        feedbackStatus.textContent = "Saving feedback…";
+        try {
+          await requestJson(`/investigations/${identifiers.investigation_id}/feedback`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              rating,
+              comment: comment.value,
+              correction_target: rating === "incorrect" ? correctionTarget.value : null,
+              corrected_cause: rating === "incorrect" ? correctedCause.value : null,
+            }),
+          });
+          feedbackStatus.textContent = `Your rating: ${rating}.`;
+          await loadFeedbackSummary(identifiers.investigation_id, feedbackStatus);
+        } catch (error) {
+          feedbackStatus.textContent = `Could not save feedback: ${error.message}`;
+        }
+      });
+      actions.append(button);
+    });
+    feedback.append(actions, comment, correctionTarget, correctedCause, feedbackStatus);
+    reportContainer.append(feedback);
+    loadFeedbackSummary(identifiers.investigation_id, feedbackStatus, comment, correctionTarget, correctedCause);
+  }
+
   reportContainer.querySelectorAll(".timeline-evidence").forEach((button) => {
     button.addEventListener("click", () => {
       const details = reportContainer.querySelector("#all-evidence");
@@ -129,6 +180,21 @@ function renderReport(report, identifiers = {}) {
       }
     });
   });
+}
+
+async function loadFeedbackSummary(id, target, commentInput = null, correctionTarget = null, correctedCause = null) {
+  try {
+    const summary = await requestJson(`/investigations/${id}/feedback`);
+    const own = summary.my_feedback ? ` Your rating: ${summary.my_feedback.rating}.` : "";
+    if (commentInput && summary.my_feedback) {
+      commentInput.value = summary.my_feedback.comment || "";
+      if (correctionTarget) correctionTarget.value = summary.my_feedback.correction_target || "";
+      if (correctedCause) correctedCause.value = summary.my_feedback.corrected_cause || "";
+    }
+    target.textContent = `Team feedback: ${summary.helpful} helpful, ${summary.incorrect} incorrect.${own}`;
+  } catch (error) {
+    target.textContent = `Feedback unavailable: ${error.message}`;
+  }
 }
 
 async function loadHistory() {
@@ -223,6 +289,62 @@ async function loadHistory() {
     });
   } catch (error) {
     historyList.replaceChildren(element("p", "muted", `Could not load saved reports: ${error.message}`));
+  }
+}
+
+async function loadEvaluationHistory() {
+  const container = document.querySelector("#evaluation-history");
+  container.replaceChildren(element("p", "muted", "Loading evaluation runs…"));
+  try {
+    const runs = await requestJson("/evaluations/runs?limit=20");
+    container.replaceChildren();
+    if (!runs.length) {
+      container.append(element("p", "muted", "No evaluation runs recorded yet. Run `python -m app.scripts.evaluate_known_incidents` from backend."));
+      return;
+    }
+    runs.forEach((run, index) => {
+      const card = element("article", "evaluation-run");
+      const older = runs[index + 1];
+      const title = element("div", "evaluation-run-title");
+      title.append(element("strong", "", `Run #${run.id} · dataset v${run.dataset_version}`));
+      title.append(element("span", "muted", `${run.created_at ? new Date(run.created_at).toLocaleString() : "date unavailable"} · ${run.initiated_by}`));
+      card.append(title);
+      const metrics = element("div", "evaluation-metrics");
+      [
+        ["Pass rate", run.pass_rate],
+        ["Citation rate", run.citation_rate],
+        ["Validation rate", run.validation_rate],
+        ["Mean confidence", run.mean_confidence],
+      ].forEach(([label, value]) => {
+        const metric = element("div", "evaluation-metric");
+        const line = element("div", "evaluation-metric-line");
+        const previous = older ? Number(older[label === "Pass rate" ? "pass_rate" : label === "Citation rate" ? "citation_rate" : label === "Validation rate" ? "validation_rate" : "mean_confidence"]) : null;
+        const delta = previous === null ? "" : ` · ${Number(value) - previous >= 0 ? "+" : ""}${Math.round((Number(value) - previous) * 100)} pp`;
+        line.append(element("span", "", label), element("strong", "", `${Math.round(Number(value) * 100)}%${delta}`));
+        metric.append(line);
+        const bar = element("div", "evaluation-bar");
+        const fill = element("span", "");
+        fill.style.width = `${Math.max(0, Math.min(100, Number(value) * 100))}%`;
+        bar.append(fill);
+        metric.append(bar);
+        metrics.append(metric);
+      });
+      card.append(metrics, element("p", "muted evaluation-case-count", `${run.passed_count}/${run.case_count} cases passed`));
+      const details = element("details", "evaluation-cases");
+      details.append(element("summary", "", "Case results"));
+      const list = element("ul", "evaluation-case-list");
+      (run.results || []).forEach((result) => {
+        const item = element("li", result.passed ? "case-passed" : "case-failed");
+        const terms = result.expected_terms_found?.length ? result.expected_terms_found.join(", ") : "no expected terms found";
+        item.textContent = `${result.passed ? "Passed" : "Failed"} · ${result.id} · ${result.citation_count} citations · ${terms}`;
+        list.append(item);
+      });
+      details.append(list);
+      card.append(details);
+      container.append(card);
+    });
+  } catch (error) {
+    container.replaceChildren(element("p", "muted", `Could not load evaluation history: ${error.message}`));
   }
 }
 
@@ -518,6 +640,7 @@ form.addEventListener("submit", async (event) => {
 });
 
 document.querySelector("#refresh-history").addEventListener("click", loadHistory);
+document.querySelector("#refresh-evaluations").addEventListener("click", loadEvaluationHistory);
 document.querySelector("#history-filters").addEventListener("submit", (event) => {
   event.preventDefault();
   loadHistory();
@@ -575,17 +698,20 @@ document.querySelector("#connect-button").addEventListener("click", async () => 
     accessToken = login.access_token;
     currentUserRole = login.user.role;
     document.querySelector("#team-panel").hidden = currentUserRole !== "admin";
+    document.querySelector("#evaluation-panel").hidden = false;
     document.querySelector("#signout-button").hidden = false;
     passwordInput.value = "";
     authStatus.textContent = `${login.user.email} · ${login.user.role}`;
     authStatus.className = "auth-status connected";
     await loadHistory();
+    await loadEvaluationHistory();
     await loadNotifications();
     if (currentUserRole === "admin") await loadTeamAccounts();
   } catch (error) {
     accessToken = "";
     currentUserRole = "";
     document.querySelector("#team-panel").hidden = true;
+    document.querySelector("#evaluation-panel").hidden = true;
     document.querySelector("#signout-button").hidden = true;
     document.querySelector("#team-list").replaceChildren();
     historyList.replaceChildren(element("p", "muted", "Sign in to view saved reports."));
@@ -623,6 +749,7 @@ document.querySelector("#signout-button").addEventListener("click", () => {
   accessToken = "";
   currentUserRole = "";
   document.querySelector("#team-panel").hidden = true;
+  document.querySelector("#evaluation-panel").hidden = true;
   document.querySelector("#signout-button").hidden = true;
   document.querySelector("#auth-status").textContent = "Signed out";
   document.querySelector("#auth-status").className = "auth-status";

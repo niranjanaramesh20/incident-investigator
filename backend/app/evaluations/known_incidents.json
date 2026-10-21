@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "id": "payment-db-timeout",
+      "incident": "Payment requests are failing and timing out in production.",
+      "question": "What is the most likely cause and which evidence supports it?",
+      "service": "payment-service",
+      "expected_terms": ["database", "timeout"],
+      "minimum_citations": 1
+    },
+    {
+      "id": "payment-deployment-regression",
+      "incident": "Payment errors increased after the latest production release.",
+      "question": "What changed around the time of the payment errors?",
+      "service": "payment-service",
+      "expected_terms": ["v2.1.0", "timeout"],
+      "minimum_citations": 1
+    },
+    {
+      "id": "payment-capacity-signal",
+      "incident": "The payment service is slow and CPU is saturated.",
+      "question": "What operational signals and likely underlying issue are documented?",
+      "service": "payment-service",
+      "expected_terms": ["cpu", "database"],
+      "minimum_citations": 1
+    }
+  ]
+}

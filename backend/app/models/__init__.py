@@ -13,3 +13,5 @@ from .investigation_activity import InvestigationActivity
 from .notification import Notification
 from .user import User
 from .evidence import Evidence
+from .investigation_feedback import InvestigationFeedback
+from .evaluation_run import EvaluationRun

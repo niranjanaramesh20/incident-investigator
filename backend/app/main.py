@@ -21,6 +21,8 @@ from app.investigation.report_generator import ReportGenerator
 from app.auth import create_session_token, current_user, get_db, hash_password, require_admin, require_analyst, verify_password
 from app.models.incident import Incident
 from app.models.investigation import Investigation
+from app.models.investigation_feedback import InvestigationFeedback
+from app.models.evaluation_run import EvaluationRun
 from app.models.investigation_status_event import InvestigationStatusEvent
 from app.models.investigation_comment import InvestigationComment
 from app.models.investigation_activity import InvestigationActivity
@@ -170,6 +172,39 @@ class InvestigationCommentCreate(BaseModel):
 
 class NotificationReadUpdate(BaseModel):
     is_read: bool = True
+
+
+class InvestigationFeedbackRequest(BaseModel):
+    rating: Literal["helpful", "incorrect"]
+    comment: str | None = Field(default=None, max_length=2_000)
+    correction_target: str | None = Field(default=None, max_length=500)
+    corrected_cause: str | None = Field(default=None, max_length=2_000)
+
+    @field_validator("comment")
+    @classmethod
+    def clean_feedback_comment(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+    @field_validator("correction_target", "corrected_cause")
+    @classmethod
+    def clean_correction(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        return value or None
+
+    @model_validator(mode="after")
+    def validate_correction_pair(self):
+        has_target = bool(self.correction_target)
+        has_cause = bool(self.corrected_cause)
+        if has_target != has_cause:
+            raise ValueError("Provide both the finding or citation and its corrected cause.")
+        if has_target and self.rating != "incorrect":
+            raise ValueError("Corrections can only be submitted with an incorrect rating.")
+        return self
 
 
 class LoginRequest(BaseModel):
@@ -629,6 +664,96 @@ def get_investigation(
         else None,
         "report": investigation.report,
     }
+
+
+@app.get("/investigations/{investigation_id}/feedback", dependencies=[Depends(current_user)])
+def get_investigation_feedback(
+    investigation_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(current_user),
+):
+    if db.get(Investigation, investigation_id) is None:
+        raise HTTPException(status_code=404, detail="Investigation not found.")
+    entries = db.query(InvestigationFeedback).filter(
+        InvestigationFeedback.investigation_id == investigation_id
+    ).all()
+    mine = next((entry for entry in entries if entry.user_id == user_id(user)), None)
+    return {
+        "investigation_id": investigation_id,
+        "helpful": sum(entry.rating == "helpful" for entry in entries),
+        "incorrect": sum(entry.rating == "incorrect" for entry in entries),
+        "my_feedback": {
+            "rating": mine.rating,
+            "comment": mine.comment,
+            "correction_target": mine.correction_target,
+            "corrected_cause": mine.corrected_cause,
+        } if mine else None,
+    }
+
+
+@app.put("/investigations/{investigation_id}/feedback", dependencies=[Depends(require_analyst)])
+def submit_investigation_feedback(
+    investigation_id: int,
+    update: InvestigationFeedbackRequest,
+    db: Session = Depends(get_db),
+    user=Depends(current_user),
+):
+    if db.get(Investigation, investigation_id) is None:
+        raise HTTPException(status_code=404, detail="Investigation not found.")
+    if user_id(user) is None:
+        raise HTTPException(status_code=401, detail="A signed-in account is required for feedback.")
+    entry = db.query(InvestigationFeedback).filter_by(
+        investigation_id=investigation_id, user_id=user_id(user)
+    ).one_or_none()
+    if entry is None:
+        entry = InvestigationFeedback(
+            investigation_id=investigation_id,
+            user_id=user_id(user),
+            rating=update.rating,
+            comment=update.comment,
+            correction_target=update.correction_target,
+            corrected_cause=update.corrected_cause,
+        )
+        db.add(entry)
+    else:
+        entry.rating = update.rating
+        entry.comment = update.comment
+        entry.correction_target = update.correction_target
+        entry.corrected_cause = update.corrected_cause
+    db.commit()
+    return {
+        "investigation_id": investigation_id,
+        "rating": entry.rating,
+        "comment": entry.comment,
+        "correction_target": entry.correction_target,
+        "corrected_cause": entry.corrected_cause,
+    }
+
+
+@app.get("/evaluations/runs", dependencies=[Depends(current_user)])
+def list_evaluation_runs(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    runs = db.query(EvaluationRun).order_by(
+        EvaluationRun.created_at.desc(), EvaluationRun.id.desc()
+    ).limit(limit).all()
+    return [
+        {
+            "id": run.id,
+            "dataset_version": run.dataset_version,
+            "initiated_by": run.initiated_by,
+            "case_count": run.case_count,
+            "passed_count": run.passed_count,
+            "pass_rate": run.pass_rate,
+            "mean_confidence": run.mean_confidence,
+            "validation_rate": run.validation_rate,
+            "citation_rate": run.citation_rate,
+            "results": run.results,
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+        }
+        for run in runs
+    ]
 
 
 @app.patch(

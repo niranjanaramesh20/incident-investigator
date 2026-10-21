@@ -192,6 +192,39 @@ and the related SMTP settings in `.env`. Delivery is disabled when those values
 are blank; external messages are sent only after a configured assignment or
 status change.
 
+Analysts can rate a saved report as `helpful` or `incorrect` in the report view.
+Feedback comments explain what should change. For incorrect reports, analysts
+can also record the specific finding or citation and the corrected cause. A
+user's latest rating replaces their earlier rating for that report. Read team totals with
+`GET /investigations/{id}/feedback`; submit or update your own rating with
+`PUT /investigations/{id}/feedback`, for example:
+
+```json
+{
+  "rating":"incorrect",
+  "comment":"The cited deployment was unrelated to the alert.",
+  "correction_target":"Finding: deployment caused the errors",
+  "corrected_cause":"The database connection pool was exhausted."
+}
+```
+
+The small, versioned known-incident set is in
+`backend/app/evaluations/known_incidents.json`. After migrations and sample
+evidence are available, run it from `backend` with:
+
+```bash
+python -m app.scripts.evaluate_known_incidents
+```
+
+The command runs each case through the current retrieval and report pipeline,
+prints per-case citation and expected-term checks plus aggregate pass,
+confidence, validation, and citation rates, saves the run to PostgreSQL, and
+exits nonzero if any case fails. Corrections submitted by analysts are included
+as additional regression cases on later runs. Signed-in users can compare recent
+runs in **Evaluation history** in the web interface; use **Refresh runs** after
+running the command. The set is a small regression signal; its expected-term and
+citation checks are not a substitute for analyst review.
+
 ## Run automated tests
 
 The unit tests use stubbed retrieval and model results, so they do not call the
