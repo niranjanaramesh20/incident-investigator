@@ -15,6 +15,19 @@ function element(tag, className, text) {
   return node;
 }
 
+function updateAccessState() {
+  const canInvestigate = currentUserRole === "admin" || currentUserRole === "analyst";
+  document.querySelector("#investigation-fields").disabled = !canInvestigate;
+  document.querySelector("#ingestion-fields").disabled = !canInvestigate;
+  const message = currentUserRole === "viewer"
+    ? "Viewer access is read-only. Ask an administrator for analyst access to investigate incidents or add evidence."
+    : canInvestigate
+      ? ""
+      : "Sign in with an analyst or administrator account to investigate incidents and add evidence.";
+  document.querySelector("#investigation-access").textContent = message;
+  document.querySelector("#ingestion-access").textContent = message;
+}
+
 async function requestJson(url, options = {}) {
   const headers = new Headers(options.headers || {});
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
@@ -814,7 +827,8 @@ document.querySelector("#ingestion-form").addEventListener("submit", async (even
   }
 });
 
-document.querySelector("#connect-button").addEventListener("click", async () => {
+document.querySelector("#auth-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
   const emailInput = document.querySelector("#account-email");
   const passwordInput = document.querySelector("#account-password");
   const authStatus = document.querySelector("#auth-status");
@@ -832,10 +846,14 @@ document.querySelector("#connect-button").addEventListener("click", async () => 
     });
     accessToken = login.access_token;
     currentUserRole = login.user.role;
+    updateAccessState();
     document.querySelector("#team-panel").hidden = currentUserRole !== "admin";
     document.querySelector("#evaluation-panel").hidden = false;
     document.querySelector("#run-evaluation").hidden = currentUserRole === "viewer";
     document.querySelector("#signout-button").hidden = false;
+    emailInput.hidden = true;
+    passwordInput.hidden = true;
+    document.querySelector("#connect-button").hidden = true;
     passwordInput.value = "";
     authStatus.textContent = `${login.user.email} · ${login.user.role}`;
     authStatus.className = "auth-status connected";
@@ -846,6 +864,7 @@ document.querySelector("#connect-button").addEventListener("click", async () => 
   } catch (error) {
     accessToken = "";
     currentUserRole = "";
+    updateAccessState();
     document.querySelector("#team-panel").hidden = true;
     document.querySelector("#evaluation-panel").hidden = true;
     document.querySelector("#signout-button").hidden = true;
@@ -884,9 +903,13 @@ document.querySelector("#team-create-form").addEventListener("submit", async (ev
 document.querySelector("#signout-button").addEventListener("click", () => {
   accessToken = "";
   currentUserRole = "";
+  updateAccessState();
   document.querySelector("#team-panel").hidden = true;
   document.querySelector("#evaluation-panel").hidden = true;
   document.querySelector("#signout-button").hidden = true;
+  document.querySelector("#account-email").hidden = false;
+  document.querySelector("#account-password").hidden = false;
+  document.querySelector("#connect-button").hidden = false;
   document.querySelector("#auth-status").textContent = "Signed out";
   document.querySelector("#auth-status").className = "auth-status";
   historyList.replaceChildren(element("p", "muted", "Sign in to view saved reports."));
@@ -911,3 +934,4 @@ async function loadHealth() {
 
 loadHealth();
 loadHistory();
+updateAccessState();

@@ -13,13 +13,13 @@
         <span class="brand-mark">II</span>
         <span>Incident Investigator</span>
       </a>
-      <div class="auth-controls">
-        <input id="account-email" type="email" autocomplete="username" aria-label="Account email" placeholder="Email" />
-        <input id="account-password" type="password" autocomplete="current-password" aria-label="Account password" placeholder="Password" />
-        <button id="connect-button" type="button">Sign in</button>
+      <form id="auth-form" class="auth-controls">
+        <input id="account-email" type="email" autocomplete="username" aria-label="Account email" placeholder="Email" required />
+        <input id="account-password" type="password" autocomplete="current-password" aria-label="Account password" placeholder="Password" required />
+        <button id="connect-button" type="submit">Sign in</button>
         <button id="signout-button" type="button" hidden>Sign out</button>
         <span id="auth-status" role="status">Not connected</span>
-      </div>
+      </form>
       <div class="health" id="health" role="status">
         <span class="health-dot"></span><span>Checking services…</span>
       </div>
@@ -41,7 +41,9 @@
             </div>
             <span class="step">01</span>
           </div>
+          <p class="access-hint" id="investigation-access" role="status"></p>
           <form id="investigation-form">
+            <fieldset class="access-fieldset" id="investigation-fields" disabled>
             <label for="incident">Incident summary</label>
             <textarea id="incident" name="incident" rows="5" required maxlength="10000" placeholder="Payment failures began shortly after the production deployment…"></textarea>
 
@@ -81,6 +83,7 @@
               <span>Run investigation</span><span aria-hidden="true">↗</span>
             </button>
             <p class="form-message" id="form-message" role="alert"></p>
+            </fieldset>
           </form>
         </section>
 
@@ -107,7 +110,9 @@
           </div>
           <span class="step">03</span>
         </div>
+        <p class="access-hint" id="ingestion-access" role="status"></p>
         <form id="ingestion-form">
+          <fieldset class="access-fieldset" id="ingestion-fields" disabled>
           <div class="ingestion-controls">
             <div>
               <label for="ingestion-source-type">Source type</label>
@@ -125,6 +130,7 @@
           <textarea id="ingestion-records" rows="7" required spellcheck="false" placeholder='[{"source_id":"trace-104","service":"payment-service","timestamp":"2026-07-25T10:40:00","level":"ERROR","message":"Database connection timeout"}]'></textarea>
           <p class="ingestion-help">Use a stable <code>source_id</code> to update a record later. Repeated IDs update existing evidence.</p>
           <p class="form-message" id="ingestion-message" role="status"></p>
+          </fieldset>
         </form>
       </section>
 
