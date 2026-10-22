@@ -52,6 +52,22 @@ can investigate, ingest evidence, assign work, update status, and comment.
 Viewers can read saved reports and history. Sessions last 12 hours and the UI
 keeps the session token in memory only.
 
+## Run the React frontend
+
+A separate React application lives in `frontend/`. Keep the FastAPI server
+running on port 8000, then start the React development server in another
+terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open `http://127.0.0.1:5173/`. Vite proxies API requests to the FastAPI server;
+the existing backend-served interface at `/ui/` remains available as well.
+Build the standalone frontend with `npm run build` from `frontend/`.
+
 ## Investigate an incident
 
 Send a `POST` request to `/investigate` with an incident description and a
