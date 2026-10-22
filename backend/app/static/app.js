@@ -5,6 +5,8 @@ const submitButton = document.querySelector("#submit-button");
 const historyList = document.querySelector("#history-list");
 let accessToken = "";
 let currentUserRole = "";
+const historyPageSize = 20;
+let historyOffset = 0;
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -197,10 +199,10 @@ async function loadFeedbackSummary(id, target, commentInput = null, correctionTa
   }
 }
 
-async function loadHistory() {
+async function loadHistory(offset = historyOffset) {
   historyList.replaceChildren(element("p", "muted", "Loading saved reports…"));
   try {
-    const params = new URLSearchParams({ limit: "20" });
+    const params = new URLSearchParams({ limit: String(historyPageSize + 1), offset: String(offset) });
     const query = document.querySelector("#history-query").value.trim();
     const service = document.querySelector("#history-service").value.trim();
     const assignee = document.querySelector("#history-assignee").value.trim();
@@ -216,12 +218,20 @@ async function loadHistory() {
     if (createdAfter) params.set("created_after", new Date(createdAfter).toISOString());
     if (createdBefore) params.set("created_before", new Date(createdBefore).toISOString());
     const reports = await requestJson(`/investigations?${params.toString()}`);
+    historyOffset = offset;
+    const hasNextPage = reports.length > historyPageSize;
+    const pageReports = reports.slice(0, historyPageSize);
+    const pagination = document.querySelector("#history-pagination");
+    pagination.hidden = offset === 0 && !hasNextPage;
+    document.querySelector("#history-previous").disabled = offset === 0;
+    document.querySelector("#history-next").disabled = !hasNextPage;
+    document.querySelector("#history-page-status").textContent = `Reports ${offset + 1}–${offset + pageReports.length}${hasNextPage ? "+" : ""}`;
     historyList.replaceChildren();
-    if (!reports.length) {
+    if (!pageReports.length) {
       historyList.append(element("p", "muted", "No saved investigations yet."));
       return;
     }
-    reports.forEach((item) => {
+    pageReports.forEach((item) => {
       const row = element("article", "history-row");
       const openButton = element("button", "history-open");
       openButton.type = "button";
@@ -762,7 +772,13 @@ document.querySelector("#refresh-evaluations").addEventListener("click", loadEva
 document.querySelector("#run-evaluation").addEventListener("click", startEvaluation);
 document.querySelector("#history-filters").addEventListener("submit", (event) => {
   event.preventDefault();
-  loadHistory();
+  loadHistory(0);
+});
+document.querySelector("#history-previous").addEventListener("click", () => {
+  loadHistory(Math.max(0, historyOffset - historyPageSize));
+});
+document.querySelector("#history-next").addEventListener("click", () => {
+  loadHistory(historyOffset + historyPageSize);
 });
 document.querySelector("#notification-panel").addEventListener("toggle", (event) => {
   if (event.currentTarget.open) loadNotifications();

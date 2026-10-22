@@ -118,6 +118,9 @@ input:focus, textarea:focus, select:focus { border-color: #76cdb7; box-shadow: 0
 .history-panel .panel-heading { align-items: center; margin-bottom: 13px; }
 .quiet-button { background: transparent; color: var(--accent); border: 1px solid #3c645c; border-radius: 7px; padding: 7px 10px; cursor: pointer; font-size: 11px; }
 .history-list { display: grid; gap: 7px; }
+.history-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.history-pagination .muted { margin: 0; text-align: center; }
+.history-pagination button:disabled { opacity: .45; cursor: not-allowed; }
 .history-row { width: 100%; padding: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 9px 14px; text-align: left; color: var(--text); background: #111b28; border: 1px solid #2b3a4e; border-radius: 8px; }
 .history-row:hover { border-color: #6cae9f; }
 .history-audit { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
@@ -220,6 +223,7 @@ footer { color: #6f8094; font-size: 11px; text-align: center; padding: 27px 0 4p
   .form-panel, .result-panel, .history-panel, .ingestion-panel { padding: 17px; }
   .filter-grid { grid-template-columns: 1fr; }
   .history-filters { grid-template-columns: 1fr; }
+  .history-pagination { position: sticky; bottom: 0; margin: 12px -17px -17px; padding: 10px 17px; background: #15202ef2; backdrop-filter: blur(10px); }
   .team-create-form { grid-template-columns: 1fr; }
   .team-account { grid-template-columns: minmax(0, 1fr) 100px; }
   .team-account .team-active { grid-column: 2; }
