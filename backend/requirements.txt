@@ -23,4 +23,7 @@ langchain-core
 langchain-openai
 langchain-chroma
 sentence-transformers
+# Use the CPU wheel so pip does not pull CUDA and NVIDIA runtime packages.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
 gitpython
