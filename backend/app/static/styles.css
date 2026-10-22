@@ -26,6 +26,10 @@ button, input, textarea, select { font: inherit; }
   justify-content: space-between; padding: 0 max(28px, calc((100vw - 1240px) / 2));
   background: #101824dd; backdrop-filter: blur(14px);
 }
+.workspace-nav { position: sticky; top: 0; z-index: 10; display: flex; justify-content: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid #ffffff12; background: #101824ed; backdrop-filter: blur(14px); }
+.workspace-nav a { padding: 6px 11px; border-radius: 99px; color: #b7c6d6; text-decoration: none; font-size: 11px; }
+.workspace-nav a:hover, .workspace-nav a:focus-visible { color: var(--accent); background: #89dfc714; outline: none; }
+.panel[id] { scroll-margin-top: 58px; }
 .brand { color: var(--text); display: flex; align-items: center; gap: 11px; text-decoration: none; font-weight: 700; letter-spacing: -.02em; }
 .brand-mark { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 9px; color: var(--accent-ink); background: var(--accent); font: 500 11px 'DM Mono', monospace; }
 .auth-controls { display: flex; align-items: center; gap: 7px; }
@@ -218,6 +222,7 @@ footer { color: #6f8094; font-size: 11px; text-align: center; padding: 27px 0 4p
 }
 @media (max-width: 520px) {
   .topbar { padding: 9px 14px; height: auto; min-height: 60px; flex-wrap: wrap; gap: 9px; }
+  .workspace-nav { justify-content: flex-start; overflow-x: auto; white-space: nowrap; }
   .brand { font-size: 12px; }
   .health { font-size: 9px; margin-left: auto; }
   .auth-controls { width: 100%; }

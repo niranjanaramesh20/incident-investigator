@@ -28,6 +28,12 @@ function updateAccessState() {
   document.querySelector("#ingestion-access").textContent = message;
 }
 
+function clearHistory(message = "Sign in to view saved reports.") {
+  historyOffset = 0;
+  historyList.replaceChildren(element("p", "muted", message));
+  document.querySelector("#history-pagination").hidden = true;
+}
+
 async function requestJson(url, options = {}) {
   const headers = new Headers(options.headers || {});
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
@@ -311,7 +317,8 @@ async function loadHistory(offset = historyOffset) {
       historyList.append(row);
     });
   } catch (error) {
-    historyList.replaceChildren(element("p", "muted", `Could not load saved reports: ${error.message}`));
+    if (!accessToken) clearHistory();
+    else historyList.replaceChildren(element("p", "muted", `Could not load saved reports: ${error.message}`));
   }
 }
 
@@ -869,7 +876,7 @@ document.querySelector("#auth-form").addEventListener("submit", async (event) =>
     document.querySelector("#evaluation-panel").hidden = true;
     document.querySelector("#signout-button").hidden = true;
     document.querySelector("#team-list").replaceChildren();
-    historyList.replaceChildren(element("p", "muted", "Sign in to view saved reports."));
+    clearHistory();
     document.querySelector("#notification-list").replaceChildren();
     document.querySelector("#notification-count").textContent = "0 unread";
     reportContainer.replaceChildren(element("p", "muted", "Sign in to open saved reports."));
@@ -912,7 +919,7 @@ document.querySelector("#signout-button").addEventListener("click", () => {
   document.querySelector("#connect-button").hidden = false;
   document.querySelector("#auth-status").textContent = "Signed out";
   document.querySelector("#auth-status").className = "auth-status";
-  historyList.replaceChildren(element("p", "muted", "Sign in to view saved reports."));
+  clearHistory();
   document.querySelector("#notification-list").replaceChildren();
   document.querySelector("#notification-count").textContent = "0 unread";
   document.querySelector("#team-list").replaceChildren();

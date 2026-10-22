@@ -24,6 +24,11 @@
         <span class="health-dot"></span><span>Checking services…</span>
       </div>
     </header>
+    <nav class="workspace-nav" aria-label="Workspace sections">
+      <a href="#investigation-workspace">Investigate</a>
+      <a href="#evidence-workspace">Evidence</a>
+      <a href="#saved-reports">Saved reports</a>
+    </nav>
 
     <main class="layout">
       <section class="intro">
@@ -33,7 +38,7 @@
       </section>
 
       <div class="columns">
-        <section class="panel form-panel" aria-labelledby="new-investigation-title">
+        <section class="panel form-panel" id="investigation-workspace" aria-labelledby="new-investigation-title">
           <div class="panel-heading">
             <div>
               <p class="eyebrow">New investigation</p>
@@ -102,7 +107,7 @@
         </section>
       </div>
 
-      <section class="panel ingestion-panel" aria-labelledby="ingest-title">
+      <section class="panel ingestion-panel" id="evidence-workspace" aria-labelledby="ingest-title">
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Evidence sources</p>
@@ -134,7 +139,7 @@
         </form>
       </section>
 
-      <section class="panel history-panel" aria-labelledby="history-title">
+      <section class="panel history-panel" id="saved-reports" aria-labelledby="history-title">
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Investigation history</p>
