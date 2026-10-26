@@ -446,17 +446,10 @@ def health(db: Session = Depends(get_db)):
         database_status = "unavailable"
         db.rollback()
 
-    vector_path = Path(
-        os.getenv(
-            "CHROMA_PERSIST_DIRECTORY",
-            str(Path(__file__).resolve().parents[1] / "data" / "chroma_db"),
-        )
-    )
-    vector_status = (
-        "initialized"
-        if vector_path.is_dir() and any(vector_path.iterdir())
-        else "not_initialized"
-    )
+    try:
+        vector_status = "not_initialized" if get_vector_store().is_empty() else "initialized"
+    except Exception:
+        vector_status = "unavailable"
     checks = {
         "database": database_status,
         "openai_api_key": "configured" if os.getenv("OPENAI_API_KEY") else "missing",
