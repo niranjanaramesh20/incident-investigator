@@ -82,6 +82,8 @@ def current_user(
     db: Session = Depends(get_db),
 ):
     if credentials is None:
+        if os.getenv("ALLOW_PUBLIC_ACCESS", "false").lower() == "true":
+            return SimpleNamespace(id=None, email="public-visitor", role="public", is_active=True)
         raise HTTPException(status_code=401, detail="Sign in to continue.", headers={"WWW-Authenticate": "Bearer"})
 
     configured_token = os.getenv("API_ACCESS_TOKEN", "")
@@ -121,3 +123,11 @@ def require_roles(*roles: str):
 
 require_analyst = require_roles("admin", "analyst")
 require_admin = require_roles("admin")
+
+
+def require_analyst_or_public(user=Depends(current_user)):
+    if user.role in {"admin", "analyst"}:
+        return user
+    if user.role == "public" and os.getenv("ALLOW_PUBLIC_ACCESS", "false").lower() == "true":
+        return user
+    raise HTTPException(status_code=403, detail="Your account does not have permission for this action.")

@@ -1,24 +1,29 @@
+import asyncio
+import ipaddress
 import os
 import hashlib
 import json
 import re
+import time
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Response
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import JSONResponse
 
 from app.ingestion.sample_data import load_sample_documents
 from app.investigation.confidence_scorer import ConfidenceScorer
 from app.investigation.evidence_validator import EvidenceValidator
 from app.investigation.investigation_engine import InvestigationEngine
 from app.investigation.report_generator import ReportGenerator
-from app.auth import create_session_token, current_user, get_db, hash_password, require_admin, require_analyst, verify_password
+from app.auth import create_session_token, current_user, get_db, hash_password, require_admin, require_analyst, require_analyst_or_public, verify_password
 from app.models.incident import Incident
 from app.models.investigation import Investigation
 from app.models.investigation_feedback import InvestigationFeedback
@@ -45,6 +50,72 @@ app = FastAPI(
     version="1.0.0",
     description="Investigate incidents using indexed logs, alerts, deployments, commits, and runbooks.",
 )
+
+_public_rate_limit_requests: dict[str, deque[float]] = {}
+_public_investigation_lock = asyncio.Lock()
+_public_rate_limit_last_cleanup = 0.0
+
+
+@app.middleware("http")
+async def limit_public_investigations(request: Request, call_next):
+    global _public_rate_limit_last_cleanup
+    is_public = os.getenv("ALLOW_PUBLIC_ACCESS", "false").lower() == "true"
+    if not is_public or request.method != "POST" or request.url.path not in {"/investigate", "/evidence"}:
+        return await call_next(request)
+
+    client_ip = request.client.host if request.client else "unknown"
+    if os.getenv("TRUST_PROXY_HEADERS", "false").lower() == "true":
+        proxy_ip = request.headers.get("x-real-ip", "").strip()
+        try:
+            client_ip = str(ipaddress.ip_address(proxy_ip))
+        except ValueError:
+            pass
+
+    def configured_limit(name: str, default: int) -> int:
+        try:
+            return max(1, int(os.getenv(name, str(default))))
+        except ValueError:
+            return default
+
+    if request.url.path == "/investigate":
+        window_seconds = 60
+        per_window = configured_limit("PUBLIC_INVESTIGATIONS_PER_MINUTE", 5)
+        per_day = configured_limit("PUBLIC_INVESTIGATIONS_PER_DAY", 30)
+    else:
+        window_seconds = 3_600
+        per_window = configured_limit("PUBLIC_EVIDENCE_UPLOADS_PER_HOUR", 2)
+        per_day = configured_limit("PUBLIC_EVIDENCE_UPLOADS_PER_DAY", 10)
+    now = time.monotonic()
+
+    async with _public_investigation_lock:
+        if now - _public_rate_limit_last_cleanup >= 60:
+            for address, timestamps in list(_public_rate_limit_requests.items()):
+                while timestamps and now - timestamps[0] >= 86_400:
+                    timestamps.popleft()
+                if not timestamps:
+                    del _public_rate_limit_requests[address]
+            _public_rate_limit_last_cleanup = now
+
+        bucket_key = f"{request.url.path}:{client_ip}"
+        event_times = _public_rate_limit_requests.setdefault(bucket_key, deque())
+        window_requests = [stamp for stamp in event_times if now - stamp < window_seconds]
+        if len(window_requests) >= per_window or len(event_times) >= per_day:
+            retry_after = (
+                event_times[0] + 86_400 - now
+                if len(event_times) >= per_day
+                else window_requests[0] + window_seconds - now
+            )
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Public request limit reached. Please try again later."},
+                headers={"Retry-After": str(max(1, int(retry_after)))}
+            )
+        event_times.append(now)
+        remaining = min(per_window - len(window_requests) - 1, per_day - len(event_times))
+
+    response = await call_next(request)
+    response.headers["X-RateLimit-Remaining"] = str(max(0, remaining))
+    return response
 
 
 class InvestigationRequest(BaseModel):
@@ -101,22 +172,28 @@ def source_identity(record: dict) -> str:
 
 
 class EvidenceIngestionRequest(BaseModel):
-    source_type: Literal["alert", "deployment", "git_commit", "log", "runbook"]
+    source_type: Literal["alert", "deployment", "git_commit", "log", "runbook", "mixed"]
     records: list[dict] = Field(min_length=1, max_length=250)
 
     @model_validator(mode="after")
     def validate_records(self):
-        required_fields = {
+        required_fields_by_type = {
             "alert": ("message", "timestamp"),
             "deployment": ("version", "status", "timestamp"),
             "git_commit": ("hash", "message"),
             "log": ("message", "timestamp"),
             "runbook": ("file_path", "content"),
-        }[self.source_type]
+        }
         identities = set()
         total_size = 0
 
         for record in self.records:
+            record_source_type = (
+                record.get("source_type") if self.source_type == "mixed" else self.source_type
+            )
+            if record_source_type not in required_fields_by_type:
+                raise ValueError("Each mixed evidence record requires a supported source_type.")
+            required_fields = required_fields_by_type[record_source_type]
             for field in required_fields:
                 value = record.get(field)
                 if not isinstance(value, str) or not value.strip():
@@ -128,7 +205,7 @@ class EvidenceIngestionRequest(BaseModel):
                 raise ValueError("Each record field must be 20,000 characters or fewer.")
 
             total_size += len(json.dumps(record, ensure_ascii=False))
-            identity = source_identity(record)
+            identity = (record_source_type, source_identity(record))
             if len(identity) > 256:
                 raise ValueError("A source identity must be 256 characters or fewer.")
             if identity in identities:
@@ -431,8 +508,8 @@ def check_authentication(user=Depends(current_user)):
     return {"authenticated": True, "email": user.email, "role": user.role}
 
 
-@app.get("/users")
-def list_users(user=Depends(current_user), db: Session = Depends(get_db)):
+@app.get("/users", dependencies=[Depends(require_admin)])
+def list_users(db: Session = Depends(get_db)):
     return [
         {"id": user.id, "email": user.email, "role": user.role, "is_active": user.is_active}
         for user in db.query(User).order_by(User.email).all()
@@ -479,15 +556,22 @@ def update_user(
     return {"id": target.id, "email": target.email, "role": target.role, "is_active": target.is_active}
 
 
-@app.post("/evidence", dependencies=[Depends(require_analyst)])
+@app.post("/evidence", dependencies=[Depends(require_analyst_or_public)])
 def ingest_evidence(request: EvidenceIngestionRequest):
-    """Validate and index evidence records, updating known source IDs in place."""
+    """Validate and index one or mixed-source evidence records."""
     try:
-        records = [
-            {**record, "source_id": source_identity(record)}
-            for record in request.records
+        records_by_type: dict[str, list[dict]] = {}
+        for record in request.records:
+            source_type = record.get("source_type") if request.source_type == "mixed" else request.source_type
+            normalized = {key: value for key, value in record.items() if key != "source_type"}
+            normalized["source_id"] = source_identity(normalized)
+            records_by_type.setdefault(source_type, []).append(normalized)
+        preprocessor = DataPreprocessor()
+        documents = [
+            document
+            for source_type, records in records_by_type.items()
+            for document in preprocessor.process(records, source_type)
         ]
-        documents = DataPreprocessor().process(records, request.source_type)
         result = get_vector_store().upsert_documents(documents)
         return {
             "source_type": request.source_type,
@@ -503,7 +587,7 @@ def ingest_evidence(request: EvidenceIngestionRequest):
         ) from error
 
 
-@app.post("/investigate", dependencies=[Depends(require_analyst)])
+@app.post("/investigate", dependencies=[Depends(require_analyst_or_public)])
 def investigate(request: InvestigationRequest, db: Session = Depends(get_db)):
     """Return a root-cause report for an incident and investigation question."""
     try:

@@ -1,0 +1,1 @@
+Payment failures started around 14:00 UTC on October 25, shortly after the production deployment. Please identify the most likely cause, build a short timeline from the attached evidence, cite the supporting log and deployment details, and separate confirmed facts from hypotheses.

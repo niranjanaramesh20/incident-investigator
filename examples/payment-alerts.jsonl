@@ -1,0 +1,2 @@
+{"source_type":"alert","source_id":"sample-payment-alert-001","service":"payment-service","severity":"critical","metric":"payment_error_rate","message":"Payment error rate exceeded 15 percent in production","timestamp":"2026-10-25T14:01:00Z"}
+{"source_type":"alert","source_id":"sample-payment-alert-002","service":"payment-service","severity":"warning","metric":"db_connection_waiters","message":"Database connection pool has 14 waiting requests and zero idle connections","timestamp":"2026-10-25T14:01:30Z"}

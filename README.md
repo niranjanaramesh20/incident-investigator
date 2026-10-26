@@ -243,6 +243,28 @@ users can compare recent runs in **Evaluation history**. The set is a small
 regression signal; its expected-term and citation checks are not a substitute
 for analyst review.
 
+## Public access without sign-in
+
+Set `ALLOW_PUBLIC_ACCESS=true` in the backend environment to let visitors run
+investigations and add evidence without signing in. The React interface does not
+display a sign-in form or a Saved reports panel. Public uploads and reports are
+shared, so do not use this mode for private incident data.
+
+The chat composer accepts `.log` and `.txt` files as log evidence, plus `.json`
+and `.jsonl` files containing evidence records. Attachments are added to the
+shared evidence library before the investigation runs. A request can contain at
+most 250 records and 1 MB of combined evidence data.
+
+Public requests can incur OpenAI API charges. The backend limits each client IP
+to five investigations per minute and 30 per day, and two evidence uploads per
+hour and 10 per day by default. Configure `PUBLIC_INVESTIGATIONS_PER_MINUTE`,
+`PUBLIC_INVESTIGATIONS_PER_DAY`, `PUBLIC_EVIDENCE_UPLOADS_PER_HOUR`, and
+`PUBLIC_EVIDENCE_UPLOADS_PER_DAY` to change those values. Set
+`TRUST_PROXY_HEADERS=true` only when a trusted reverse proxy overwrites
+`X-Real-IP` and the backend cannot be reached directly. The in-memory limiter
+resets on restart and is per backend process, so use an edge rate limit such as
+AWS WAF as well when deploying multiple workers or instances.
+
 ## Run automated tests
 
 The unit tests use stubbed retrieval and model results, so they do not call the

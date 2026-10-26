@@ -1,0 +1,5 @@
+2026-10-25T14:00:41Z ERROR payment-service host=pay-03 trace=tr-8211 Database connection timeout while acquiring a connection from pool
+2026-10-25T14:00:43Z ERROR payment-service host=pay-01 trace=tr-8212 Payment request failed after waiting 5000ms for a database connection
+2026-10-25T14:01:02Z WARN payment-service host=pay-02 trace=tr-8213 Connection pool exhausted: active=20 idle=0 waiting=14
+2026-10-25T14:01:18Z ERROR payment-service host=pay-03 trace=tr-8214 Transaction could not start because database connection acquisition timed out
+2026-10-25T14:02:05Z WARN payment-service host=pay-01 trace=tr-8215 Payment error rate is 18 percent over the last five minutes

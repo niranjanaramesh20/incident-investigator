@@ -1,0 +1,12 @@
+[
+  {
+    "source_type": "deployment",
+    "source_id": "sample-payment-deploy-2026-10-25",
+    "service": "payment-service",
+    "version": "2026.10.25.3",
+    "environment": "production",
+    "status": "completed",
+    "deployed_by": "release-bot",
+    "timestamp": "2026-10-25T13:55:00Z"
+  }
+]
