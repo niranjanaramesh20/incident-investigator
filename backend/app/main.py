@@ -60,7 +60,7 @@ _public_rate_limit_last_cleanup = 0.0
 async def limit_public_investigations(request: Request, call_next):
     global _public_rate_limit_last_cleanup
     is_public = os.getenv("ALLOW_PUBLIC_ACCESS", "false").lower() == "true"
-    if not is_public or request.method != "POST" or request.url.path not in {"/investigate", "/evidence"}:
+    if not is_public or request.method != "POST" or request.url.path not in {"/investigate", "/evidence", "/sample-data"}:
         return await call_next(request)
 
     client_ip = request.client.host if request.client else "unknown"
@@ -389,10 +389,6 @@ def get_vector_store():
 
     try:
         _vector_store = VectorStore()
-        if _vector_store.is_empty():
-            sample_documents = load_sample_documents()
-            if sample_documents:
-                _vector_store.add_documents(sample_documents)
         return _vector_store
     except Exception as error:
         _vector_store = None
@@ -584,6 +580,22 @@ def ingest_evidence(request: EvidenceIngestionRequest):
         raise HTTPException(
             status_code=503,
             detail=f"Could not ingest evidence: {error}",
+        ) from error
+
+
+@app.post("/sample-data", dependencies=[Depends(require_analyst_or_public)])
+def load_demo_evidence():
+    """Explicitly add the bundled demo evidence to the searchable index."""
+    try:
+        documents = load_sample_documents()
+        result = get_vector_store().upsert_documents(documents)
+        return {"record_count": len(documents), **result}
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not load sample evidence: {error}",
         ) from error
 
 

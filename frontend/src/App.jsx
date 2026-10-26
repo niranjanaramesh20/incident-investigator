@@ -108,6 +108,7 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState([]);
   const [attachments, setAttachments] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [loadingSamples, setLoadingSamples] = useState(false);
   const [notice, setNotice] = useState("");
   const chatEndRef = useRef(null);
 
@@ -130,6 +131,22 @@ export default function App() {
     const chosen = Array.from(event.target.files || []);
     setAttachments((current) => [...current, ...chosen].slice(0, 10));
     event.target.value = "";
+  }
+
+  async function loadDemoData() {
+    if (busy || loadingSamples) return;
+    setLoadingSamples(true);
+    setNotice("");
+    try {
+      const result = await api("/sample-data", { method: "POST" });
+      setDraft("Investigate the payment-service timeout on July 25, 2026. Identify the likely cause and cite the supporting logs, alert, commit, and runbook.");
+      setNotice(`Loaded ${result.record_count} bundled demo evidence items. A sample question is ready to send.`);
+      loadHealth();
+    } catch (error) {
+      setNotice(error.message);
+    } finally {
+      setLoadingSamples(false);
+    }
   }
 
   async function submitChat(event) {
@@ -187,7 +204,7 @@ export default function App() {
     </header>
     <main id="top" className="chat-app">
       <section className="chat-thread" aria-live="polite">
-        {!chatMessages.length && <div className="chat-welcome"><span className="eyebrow">Incident response</span><h1>What happened?</h1><p>Describe the incident, attach logs or evidence files, and I’ll investigate.</p></div>}
+        {!chatMessages.length && <div className="chat-welcome"><span className="eyebrow">Incident response</span><h1>What happened?</h1><p>Describe the incident, attach logs or evidence files, and I’ll investigate.</p><button className="demo-data-button" type="button" disabled={busy || loadingSamples} onClick={loadDemoData}>{loadingSamples ? "Loading demo evidence…" : "Load sample data"}</button><small className="demo-data-note">Adds the bundled alerts, logs, deployments, commits, and runbooks. It also prepares a sample question.</small></div>}
         {chatMessages.map((item, index) => <article className={"chat-message " + item.role} key={index}>
           {item.role === "user" ? <div className="user-bubble">
             {item.content && <p>{item.content}</p>}
