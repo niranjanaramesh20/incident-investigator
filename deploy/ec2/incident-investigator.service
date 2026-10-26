@@ -1,0 +1,19 @@
+[Unit]
+Description=Incident Investigator API
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/opt/incident-investigator/backend
+EnvironmentFile=/opt/incident-investigator/.env
+Environment=HF_HOME=/opt/incident-investigator/.cache/huggingface
+Environment=TOKENIZERS_PARALLELISM=false
+Environment=OMP_NUM_THREADS=1
+ExecStart=/opt/incident-investigator/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

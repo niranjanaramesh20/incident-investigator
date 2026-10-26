@@ -1,8 +1,8 @@
 # Incident Investigation System
 
 A FastAPI service that searches incident evidence and returns an AI generated
-investigation report. The initial demo indexes the sample logs, alerts,
-deployments, commits, and runbooks included in `backend/app/sample_data`.
+investigation report. The bundled sample logs, alerts, deployments, commits, and
+runbooks in `backend/app/sample_data` can be loaded on demand from the chat UI.
 
 ## Run locally
 
@@ -71,8 +71,9 @@ Build the standalone frontend with `npm run build` from `frontend/`.
 ## Investigate an incident
 
 Send a `POST` request to `/investigate` with an incident description and a
-question. On the first request, the service indexes bundled sample data in
-`backend/data/chroma_db`. Later requests reuse that local index.
+question. To use the bundled demo records, choose **Load sample data** in the
+chat UI or call `POST /sample-data`; this indexes them in
+`backend/data/chroma_db`. Empty indexes are not seeded automatically.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/auth/login \
@@ -264,6 +265,14 @@ hour and 10 per day by default. Configure `PUBLIC_INVESTIGATIONS_PER_MINUTE`,
 `X-Real-IP` and the backend cannot be reached directly. The in-memory limiter
 resets on restart and is per backend process, so use an edge rate limit such as
 AWS WAF as well when deploying multiple workers or instances.
+
+## Deploy to an Ubuntu EC2 instance
+
+The EC2 service uses the tracked systemd and Nginx templates in
+[`deploy/ec2`](deploy/ec2). Follow its README to configure the production
+environment file, install the app, apply migrations, and start the services.
+Keep the environment file and database credentials on the server; do not
+commit them.
 
 ## Run automated tests
 
